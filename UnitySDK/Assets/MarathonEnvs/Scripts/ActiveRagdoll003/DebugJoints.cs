@@ -16,7 +16,7 @@ public class DebugJoints : MonoBehaviour
     ArticulationBody _parentBody;
     MarathonTestBedController _debugController;
     // Start is called before the first frame update
-    MLAgents.SpawnableEnv _spawnableEnv;
+    SpawnableEnv _spawnableEnv;
     MocapController _mocapController;
     Rigidbody _target;
     public Vector3 TargetRotationInJointSpace;
@@ -34,7 +34,7 @@ public class DebugJoints : MonoBehaviour
         _body = GetComponent<ArticulationBody>();
         _parentBody = _body.transform.parent.GetComponentInParent<ArticulationBody>();
         _debugController = FindObjectOfType<MarathonTestBedController>();
-        _spawnableEnv = GetComponentInParent<MLAgents.SpawnableEnv>();
+        _spawnableEnv = GetComponentInParent<SpawnableEnv>();
         _mocapController = _spawnableEnv.GetComponentInChildren<MocapController>();
         var mocapBodyParts = _mocapController.GetComponentsInChildren<Rigidbody>().ToList();
         _target = mocapBodyParts.First(x=>x.name == _body.name);

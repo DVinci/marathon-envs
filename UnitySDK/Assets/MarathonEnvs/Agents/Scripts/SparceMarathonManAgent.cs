@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
 using System.Linq;
 using static BodyHelper002;
 using System;
@@ -28,7 +30,7 @@ public class RollingAverage
 	{
 		Add(val);
 		double normalized = val;
-		if (StandardDeviation != 0) 
+		if (StandardDeviation != 0)
 			normalized = (val - Mean) / StandardDeviation;
 		return normalized;
 	}
@@ -46,7 +48,7 @@ public class RollingAverage
 		_count++;
 		_sum += val;
 		_sumOfSquares += val * val;
-		// set Mean to Sum / Count, 
+		// set Mean to Sum / Count,
 		Mean = _sum / _count;
 		// set StandardDeviation to Math.Sqrt(SumOfSquares / Count - Mean * Mean).
 		StandardDeviation = Math.Sqrt(_sumOfSquares / _count - Mean * Mean);
@@ -70,47 +72,46 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 	bool _isDone;
 	bool _hasLazyInitialized;
 
-	override public void CollectObservations()
+	override public void CollectObservations(VectorSensor sensor)
 	{
-		var sensor = this;
 		if (!_hasLazyInitialized)
 		{
-			AgentReset();
+			OnEpisodeBegin();
 		}
 
 		Vector3 normalizedVelocity = _bodyManager.GetNormalizedVelocity();
         var pelvis = _bodyManager.GetFirstBodyPart(BodyPartGroup.Hips);
         var shoulders = _bodyManager.GetFirstBodyPart(BodyPartGroup.Torso);
 
-        sensor.AddVectorObs(normalizedVelocity); 
-        sensor.AddVectorObs(pelvis.Rigidbody.transform.forward); // gyroscope 
-        sensor.AddVectorObs(pelvis.Rigidbody.transform.up);
+        sensor.AddObservation(normalizedVelocity);
+        sensor.AddObservation(pelvis.Rigidbody.transform.forward); // gyroscope
+        sensor.AddObservation(pelvis.Rigidbody.transform.up);
 
-        sensor.AddVectorObs(shoulders.Rigidbody.transform.forward); // gyroscope 
-        sensor.AddVectorObs(shoulders.Rigidbody.transform.up);
+        sensor.AddObservation(shoulders.Rigidbody.transform.forward); // gyroscope
+        sensor.AddObservation(shoulders.Rigidbody.transform.up);
 
-		sensor.AddVectorObs(_bodyManager.GetSensorIsInTouch());
+		sensor.AddObservation(_bodyManager.GetSensorIsInTouch());
 		foreach (var bodyPart in _bodyManager.BodyParts)
 		{
 			bodyPart.UpdateObservations();
-			sensor.AddVectorObs(bodyPart.ObsLocalPosition);
-			sensor.AddVectorObs(bodyPart.ObsRotation);
-			sensor.AddVectorObs(bodyPart.ObsRotationVelocity);
-			sensor.AddVectorObs(bodyPart.ObsVelocity);
+			sensor.AddObservation(bodyPart.ObsLocalPosition);
+			sensor.AddObservation(bodyPart.ObsRotation);
+			sensor.AddObservation(bodyPart.ObsRotationVelocity);
+			sensor.AddObservation(bodyPart.ObsVelocity);
 		}
-		sensor.AddVectorObs(_bodyManager.GetSensorObservations());
+		sensor.AddObservation(_bodyManager.GetSensorObservations());
 
-		sensor.AddVectorObs(_notAtLimitBonus);
-		sensor.AddVectorObs(_reducedPowerBonus);
-		// _bodyManager.OnCollectObservationsHandleDebug(GetInfo());
+		sensor.AddObservation(_notAtLimitBonus);
+		sensor.AddObservation(_reducedPowerBonus);
 	}
 
-	public override void AgentAction(float[] vectorAction)
+	public override void OnActionReceived(ActionBuffers actions)
 	{
 		if (!_hasLazyInitialized)
 		{
 			return;
 		}
+		var vectorAction = actions.ContinuousActions;
 		_isDone = false;
 		// apply actions to body
 		_bodyManager.OnAgentAction(vectorAction);
@@ -132,9 +133,9 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 		_hipsUprightReward = Mathf.Clamp(_hipsUprightReward, 0f, 1f);
 		_hipsForwardReward = Mathf.Clamp(_hipsForwardReward, 0f, 1f);
 
-		var stepCount = GetStepCount() > 0 ? GetStepCount() : 1;
-		if ((stepCount >= maxStep)
-                && (maxStep > 0))
+		var stepCount = StepCount > 0 ? StepCount : 1;
+		if ((stepCount >= MaxStep)
+                && (MaxStep > 0))
         {
             AddEpisodeEndReward();
         }
@@ -142,12 +143,12 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 			var pelvis = _bodyManager.GetFirstBodyPart(BodyPartGroup.Hips);
 			if (pelvis.Transform.position.y<0){
 	            AddEpisodeEndReward();
-				Done();
+				EndEpisode();
 			}
 		}
 	}
 
-	public override void AgentReset()
+	public override void OnEpisodeBegin()
 	{
 		if (!_hasLazyInitialized)
 		{
@@ -167,8 +168,6 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 		// if (string.Compare(terrain.name, "Terrain", true) != 0)
 		if (terrain.GetComponent<Terrain>() == null)
 			return;
-		// if (!_styleAnimator.AnimationStepsReady)
-		// 	return;
         // HACK - for when agent has not been initialized
 		if (_bodyManager == null)
 			return;
@@ -191,7 +190,7 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 				// AddReward(-100f);
 				if (!_isDone){
 					AddEpisodeEndReward();
-					Done();
+					EndEpisode();
 				}
 				break;
 		}
@@ -203,11 +202,5 @@ public class SparceMarathonManAgent : Agent, IOnTerrainCollision
 
 		AddReward(reward);
 		_bodyManager.SetDebugFrameReward(reward);
-
-		// # normalized reward
-		// float normalizedReward = (float)rollingAverage.Normalize(reward);
-		// normalizedReward += (float)rollingAverage.Mean;
-		// AddReward(normalizedReward);
-		// _bodyManager.SetDebugFrameReward(normalizedReward);
 	}
 }

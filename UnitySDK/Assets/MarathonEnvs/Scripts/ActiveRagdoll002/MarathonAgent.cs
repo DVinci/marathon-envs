@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
 
-namespace MLAgents
+public class MarathonAgent : Agent
 {
-    public class MarathonAgent : Agent
-    {
         //
         // Params for prefabs
 
@@ -37,8 +37,7 @@ namespace MLAgents
 
         [Tooltip("Function which collections observations")]
         /**< \brief Function which collections observations*/
-        protected Action ObservationsFunction;
-        //protected Action<VectorSensor> ObservationsFunction;
+        protected Action<VectorSensor> ObservationsFunction;
 
         [Tooltip("Optional Function for additional reward at end of Episode")]
         /**< \brief Optional Function for additional reward at end of Episode*/
@@ -135,7 +134,7 @@ namespace MLAgents
     	bool _isDone;
         bool _hasLazyInitialized;
 
-        public override void AgentReset()
+        public override void OnEpisodeBegin()
         {
             if (!_hasLazyInitialized)
             {
@@ -238,15 +237,14 @@ namespace MLAgents
             }
         }
 
-        public override void CollectObservations()
+        public override void CollectObservations(VectorSensor sensor)
         {
-            var sensor = this;
             if (!_hasLazyInitialized)
             {
-                AgentReset();
+                OnEpisodeBegin();
             }
             UpdateQ();
-            ObservationsFunction();
+            ObservationsFunction(sensor);
 
             // var info = GetInfo();
             // if (Observations?.Count != info.vectorObservation.Count)
@@ -265,18 +263,19 @@ namespace MLAgents
             //     MaxObservationNormalizedErrors = ObservationNormalizedErrors;
         }
 
-        public override void AgentAction(float[] vectorAction)
+        public override void OnActionReceived(ActionBuffers actions)
         {
             if (!_hasLazyInitialized)
             {
                 return;
             }
     		_isDone = false;
+            var vectorAction = actions.ContinuousActions;
             if (lastVectorAction == null){
-                lastVectorAction = vectorAction.Select(x=>0f).ToArray();
-                vectorDifference = vectorAction.Select(x=>0f).ToArray();
+                lastVectorAction = new float[vectorAction.Length];
+                vectorDifference = new float[vectorAction.Length];
             }
-            
+
             Actions = vectorAction
                 .Select(x => x)
                 .ToList();
@@ -284,8 +283,10 @@ namespace MLAgents
             {
                 var inp = (float) Actions[i];
                 ApplyAction(MarathonJoints[i], inp);
-				vectorDifference[i] = vectorAction[i]-lastVectorAction[i];
+				vectorDifference[i] = vectorAction[i] - lastVectorAction[i];
             }
+            for (int i = 0; i < lastVectorAction.Length; i++)
+                lastVectorAction[i] = vectorAction[i];
 
             UpdateQ();
 
@@ -295,7 +296,7 @@ namespace MLAgents
 
                 if (done)
                 {
-                    Done();
+                    EndEpisode();
                     SetReward(OnTerminateRewardValue);
                 }
                 else if (StepRewardFunction != null)
@@ -303,7 +304,7 @@ namespace MLAgents
                     SetReward(StepRewardFunction());
                 }
 
-                done |= (this.GetStepCount() >= maxStep && maxStep > 0);
+                done |= (StepCount >= MaxStep && MaxStep > 0);
                 if (done && OnEpisodeCompleteGetRewardFunction != null)
                     AddReward(OnEpisodeCompleteGetRewardFunction());
             }
@@ -368,7 +369,7 @@ namespace MLAgents
         internal Vector3 GetNormalizedVelocity(Vector3 metersPerSecond)
         {
             var maxMetersPerSecond = _spawnableEnv.bounds.size
-                / maxStep
+                / MaxStep
                 / Time.fixedDeltaTime;
             var maxXZ = Mathf.Max(maxMetersPerSecond.x, maxMetersPerSecond.z);
             maxMetersPerSecond.x = maxXZ;
@@ -795,5 +796,4 @@ namespace MLAgents
                 SensorIsInTouch[idx] = 0f;
             }
         }
-    }
 }

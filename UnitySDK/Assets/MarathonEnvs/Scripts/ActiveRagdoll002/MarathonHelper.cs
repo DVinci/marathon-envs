@@ -1,10 +1,8 @@
 using System.Linq;
 using UnityEngine;
 
-namespace MLAgents
+public static class MarathonHelper
 {
-    public static class MarathonHelper
-    {
         static readonly bool FlipMarathonX = false;
 
         public static Vector3 RightToLeft(Vector3 rightHanded, bool hackFlipZ = false)
@@ -192,4 +190,3 @@ namespace MLAgents
             return instance;
         }
     }
-}

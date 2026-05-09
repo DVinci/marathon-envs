@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+
 public class TerrainAntAgent : MarathonAgent {
 
     TerrainGenerator _terrainGenerator;
@@ -12,9 +14,9 @@ public class TerrainAntAgent : MarathonAgent {
     float _pain;
     Vector3 _centerOfMass;
 
-    public override void AgentReset()
+    public override void OnEpisodeBegin()
     {
-        base.AgentReset();
+        base.OnEpisodeBegin();
 
         BodyParts["pelvis"] = GetComponentsInChildren<Rigidbody>().FirstOrDefault(x => x.name == "torso_geom");
 
@@ -44,7 +46,7 @@ public class TerrainAntAgent : MarathonAgent {
         int newXPosInMeters = (int) BodyParts["pelvis"].transform.position.x;
         if (newXPosInMeters > _lastXPosInMeters) {
             _lastXPosInMeters = newXPosInMeters;
-            _stepCountAtLastMeter = this.GetStepCount();
+            _stepCountAtLastMeter = this.StepCount;
         }
 
         SetCenterOfMass();
@@ -54,7 +56,7 @@ public class TerrainAntAgent : MarathonAgent {
             terminate = true;
             AddReward(-1f);
         }
-        if (this.GetStepCount()-_stepCountAtLastMeter >= (200*5))
+        if (this.StepCount-_stepCountAtLastMeter >= (200*5))
             terminate = true;
         else if (xpos < 4f && _pain > 1f)
             terminate = true;
@@ -85,28 +87,25 @@ public class TerrainAntAgent : MarathonAgent {
                 break;
         }
     }
-  
-    void ObservationsDefault()
+
+    void ObservationsDefault(VectorSensor sensor)
     {
-        var sensor = this;
         var pelvis = BodyParts["pelvis"];
         Vector3 normalizedVelocity = GetNormalizedVelocity(pelvis.velocity);
-        sensor.AddVectorObs(normalizedVelocity);
-        sensor.AddVectorObs(pelvis.transform.forward); // gyroscope 
-        sensor.AddVectorObs(pelvis.transform.up);
+        sensor.AddObservation(normalizedVelocity);
+        sensor.AddObservation(pelvis.transform.forward); // gyroscope
+        sensor.AddObservation(pelvis.transform.up);
 
-        sensor.AddVectorObs(SensorIsInTouch);
-        JointRotations.ForEach(x => sensor.AddVectorObs(x));
-        sensor.AddVectorObs(JointVelocity);
-        // Vector3 normalizedFootPosition = this.GetNormalizedPosition(pelvis.transform.position);
-        // sensor.AddVectorObs(normalizedFootPosition.y);
+        sensor.AddObservation(SensorIsInTouch);
+        foreach (var q in JointRotations) sensor.AddObservation(q);
+        sensor.AddObservation(JointVelocity);
 
-        (List<float> distances, float fraction) = 
+        (List<float> distances, float fraction) =
             _terrainGenerator.GetDistances2d(
                 pelvis.transform.position, ShowMonitor);
-   
-        sensor.AddVectorObs(distances);
-        sensor.AddVectorObs(fraction);
+
+        sensor.AddObservation(distances);
+        sensor.AddObservation(fraction);
     }
 
 
@@ -115,7 +114,7 @@ public class TerrainAntAgent : MarathonAgent {
         _centerOfMass = Vector3.zero;
         float c = 0f;
         var bodyParts = this.gameObject.GetComponentsInChildren<Rigidbody>();
- 
+
         foreach (var part in bodyParts)
         {
             _centerOfMass += part.worldCenterOfMass * part.mass;
@@ -129,22 +128,8 @@ public class TerrainAntAgent : MarathonAgent {
         float velocity = Mathf.Clamp(GetNormalizedVelocity("pelvis").x, 0f, 1f);
         float effort = 1f - GetEffortNormalized();
 
-        // velocity *= 0.7f;
-        // if (velocity >= .25f)
-        //     effort *= 0.25f;
-        // else
-        //     effort *= velocity;
-
-        // var reward = velocity
-        //              + effort;
-        // if (ShowMonitor)
-        // {
-        //     var hist = new[] {reward, velocity, effort};
-        //     Monitor.Log("rewardHist", hist, displayType: Monitor.DisplayType.Independent);
-        // }
         _pain = 0f;
         var reward = velocity;
         return reward;
-        // return 0f;
     }
 }

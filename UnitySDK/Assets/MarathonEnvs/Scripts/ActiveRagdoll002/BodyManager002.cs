@@ -1,7 +1,8 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Actuators;
 using System.Linq;
 using static BodyHelper002;
 using System;
@@ -123,7 +124,7 @@ public class BodyManager002 : MonoBehaviour, IOnSensorCollision
 		mphBuffer = new List<Vector3>();
 	}
 
-	public void OnAgentAction(float[] vectorAction)
+	public void OnAgentAction(ActionSegment<float> vectorAction)
 	{
 		if (lastVectorAction == null){
 			lastVectorAction = vectorAction.Select(x=>0f).ToArray();
@@ -404,7 +405,7 @@ public class BodyManager002 : MonoBehaviour, IOnSensorCollision
     public void SetDebugFrameReward(float reward)
 	{
 		FrameReward = reward;
-		var stepCount = _agent.GetStepCount() > 0 ? _agent.GetStepCount() : 1;
+		var stepCount = _agent.StepCount > 0 ? _agent.StepCount : 1;
 		if (_decisionRequester?.DecisionPeriod > 1)
 			stepCount /= _decisionRequester.DecisionPeriod;
 		AverageReward = _agent.GetCumulativeReward() / (float) stepCount;		
@@ -559,7 +560,7 @@ public class BodyManager002 : MonoBehaviour, IOnSensorCollision
 	public Vector3 GetNormalizedVelocity(Vector3 metersPerSecond)
 	{
 		var maxMetersPerSecond = _spawnableEnv.bounds.size
-			/ _agent.maxStep
+			/ _agent.MaxStep
 			/ Time.fixedDeltaTime;
 		var maxXZ = Mathf.Max(maxMetersPerSecond.x, maxMetersPerSecond.z);
 		maxMetersPerSecond.x = maxXZ;

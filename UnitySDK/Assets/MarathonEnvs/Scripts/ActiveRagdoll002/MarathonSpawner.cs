@@ -6,16 +6,14 @@ using System.Text;
 using System.Xml.Linq;
 using UnityEngine;
 
-namespace MLAgents
+public class MarathonSpawner : MonoBehaviour
 {
-    public class MarathonSpawner : MonoBehaviour
-    {
         [Tooltip("The MuJoCo xml file to parse")]
         /**< \brief The MuJoCo xml file to parse*/
         public TextAsset Xml;
 
         public Material Material;
-        public PhysicMaterial PhysicMaterial;
+        public PhysicsMaterial PhysicMaterial;
 
         [Tooltip("When True, UnityEngine.Time.fixedDeltaTime is set by <option timestep=xxx>")]
         /**< \brief When True, UnityEngine.Time.fixedDeltaTime is set by <option timestep=xxx>*/
@@ -1267,4 +1265,3 @@ namespace MLAgents
             return configurableJoint;
         }
     }
-}

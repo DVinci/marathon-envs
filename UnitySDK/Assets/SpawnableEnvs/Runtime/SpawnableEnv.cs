@@ -2,10 +2,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace MLAgents
+public class SpawnableEnv: MonoBehaviour
 {
-    public class SpawnableEnv: MonoBehaviour
-    {
         [Space()]
         [Tooltip("How much padding bettween spawned environments as a multiple of the envionment size (i.e. 1 = a gap of one envionment.")]
         public float paddingBetweenEnvs;
@@ -71,4 +69,3 @@ namespace MLAgents
             }
         }
     }
-}

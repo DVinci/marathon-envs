@@ -7,7 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
 using System;
 
 
@@ -78,7 +78,7 @@ public class StyleTransfer002Master : MonoBehaviour {
 
 	public bool IsInferenceMode;
 	bool _phaseIsRunning;
-    UnityEngine.Random _random = new UnityEngine.Random();
+
 	Vector3 _lastCenterOfMass;
 
 	public BodyConfig BodyConfig;

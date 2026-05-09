@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+
 public class TerrainWalkerAgent : MarathonAgent {
 
     TerrainGenerator _terrainGenerator;
@@ -13,9 +15,9 @@ public class TerrainWalkerAgent : MarathonAgent {
     float _pain;
     Vector3 _centerOfMass;
 
-    public override void AgentReset()
+    public override void OnEpisodeBegin()
     {
-        base.AgentReset();
+        base.OnEpisodeBegin();
 
         BodyParts["pelvis"] = GetComponentsInChildren<Rigidbody>().FirstOrDefault(x => x.name == "torso");
         BodyParts["left_thigh"] = GetComponentsInChildren<Rigidbody>().FirstOrDefault(x => x.name == "left_thigh");
@@ -49,13 +51,13 @@ public class TerrainWalkerAgent : MarathonAgent {
         int newXPosInMeters = (int) BodyParts["pelvis"].transform.position.x;
         if (newXPosInMeters > _lastXPosInMeters) {
             _lastXPosInMeters = newXPosInMeters;
-            _stepCountAtLastMeter = this.GetStepCount();
+            _stepCountAtLastMeter = this.StepCount;
         }
 
         SetCenterOfMass();
         var xpos = _centerOfMass.x;
         var terminate = false;
-        if (this.GetStepCount()-_stepCountAtLastMeter >= (100*5))
+        if (this.StepCount-_stepCountAtLastMeter >= (100*5))
             terminate = true;
         else if (xpos < 4f && _pain > 1f)
             terminate = true;
@@ -86,30 +88,25 @@ public class TerrainWalkerAgent : MarathonAgent {
                 break;
         }
     }
-  
-    void ObservationsDefault()
+
+    void ObservationsDefault(VectorSensor sensor)
     {
-        var sensor = this;
         var pelvis = BodyParts["pelvis"];
         Vector3 normalizedVelocity = this.GetNormalizedVelocity(pelvis.velocity);
-        sensor.AddVectorObs(normalizedVelocity);
-        sensor.AddVectorObs(pelvis.transform.forward); // gyroscope 
-        sensor.AddVectorObs(pelvis.transform.up);
+        sensor.AddObservation(normalizedVelocity);
+        sensor.AddObservation(pelvis.transform.forward); // gyroscope
+        sensor.AddObservation(pelvis.transform.up);
 
-        sensor.AddVectorObs(SensorIsInTouch);
-        JointRotations.ForEach(x => sensor.AddVectorObs(x));
-        sensor.AddVectorObs(JointVelocity);
-        // sensor.AddVectorObs(new []{
-        //     this.GetNormalizedPosition(BodyParts["left_foot"].transform.position).y,
-        //     this.GetNormalizedPosition(BodyParts["right_foot"].transform.position).y
-        // });
+        sensor.AddObservation(SensorIsInTouch);
+        foreach (var q in JointRotations) sensor.AddObservation(q);
+        sensor.AddObservation(JointVelocity);
 
-        (List<float> distances, float fraction) = 
+        (List<float> distances, float fraction) =
             _terrainGenerator.GetDistances2d(
                 pelvis.transform.position, ShowMonitor);
-   
-        sensor.AddVectorObs(distances);
-        sensor.AddVectorObs(fraction);
+
+        sensor.AddObservation(distances);
+        sensor.AddObservation(fraction);
     }
 
 
@@ -118,7 +115,7 @@ public class TerrainWalkerAgent : MarathonAgent {
         _centerOfMass = Vector3.zero;
         float c = 0f;
         var bodyParts = this.gameObject.GetComponentsInChildren<Rigidbody>();
- 
+
         foreach (var part in bodyParts)
         {
             _centerOfMass += part.worldCenterOfMass * part.mass;
@@ -134,22 +131,6 @@ public class TerrainWalkerAgent : MarathonAgent {
         float velocity = Mathf.Clamp(GetNormalizedVelocity("pelvis").x, 0f, 1f);
         float effort = 1f - GetEffortNormalized();
 
-        //if (ShowMonitor)
-        //{
-        //    var hist = new[] {velocity, uprightBonus, effort}.ToList();
-        //    Monitor.Log("rewardHist", hist.ToArray(), displayType: Monitor.DisplayType.Independent);
-        //}
-
-        // uprightBonus *= 0.1f;
-        // velocity *= 0.45f;
-        // if (velocity >= .45f)
-        //     effort *= 0.45f;
-        // else
-        //     effort *= velocity;
-
-        // var reward = velocity
-        //              + uprightBonus
-        //              + effort;
         var reward = velocity;
         _pain = 0f;
         return reward;

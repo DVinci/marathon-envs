@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Marathon Environments** is a set of high-dimensional continuous control benchmarks for reinforcement learning using Unity's ML-Agents Toolkit and PhysX physics engine. It provides 16 environments from classical locomotion (Hopper, Walker, Ant, MarathonMan) to style transfer (DeepMimic-based) and procedural terrain variants.
 
-- Unity version: 2020.1+
-- ML-Agents: 0.14.1 (with custom patches — see `Changes.md`)
-- Python: 3.6+ with OpenAI Gym interface
+- Unity version: 6000.3.15f1+
+- ML-Agents: 4.0.2 (via UPM; replaces local 0.14.1 patch)
+- Python: 3.10+ with Farama Gymnasium interface (`gymnasium>=0.29.1`, `mlagents-envs==1.1.0`)
 
 ## Repository Layout
 
@@ -19,12 +19,9 @@ marathon-envs/
 │   ├── Agents/Scripts/               # Environment-specific agent implementations
 │   └── Agents/Xml/                   # DeepMind/OpenAI-reference physics definitions
 ├── UnitySDK/Assets/SpawnableEnvs/    # EnvSpawner, SpawnableEnv, SelectEnvToSpawn
-├── com.unity.ml-agents/              # ML-Agents package with custom modifications
-│   ├── Runtime/                      # Agent, Academy, Brain, Sensor interfaces
-│   └── Plugins/                      # gRPC, Protobuf, Barracuda
-├── marathon-envs/marathon_envs/      # Python Gym wrapper package
-│   ├── envs/__init__.py              # MarathonEnvs Gym wrapper (main Python interface)
-│   └── tests/test_gym.py             # Gym wrapper unit tests (mock UnityEnvironment)
+├── marathon-envs/marathon_envs/      # Python Gymnasium wrapper package
+│   ├── envs/__init__.py              # MarathonEnvs Gymnasium wrapper (main Python interface)
+│   └── tests/test_gym.py             # Gymnasium wrapper unit tests (mock UnityEnvironment)
 ├── config/marathon_envs_config.yaml  # PPO hyperparameters for all 16 environments
 ├── stable_baselines_sac_train.py     # SAC training (alternative to PPO)
 ├── stable_baselines_sac_run.py       # SAC inference runner
@@ -113,7 +110,7 @@ Add `--no-graphics` to any `mlagents-learn` command.
 tensorboard --logdir=summaries
 ```
 
-### SAC alternative (Stable Baselines)
+### SAC alternative (Stable Baselines3)
 
 ```bash
 python stable_baselines_sac_train.py   # train; saves to models/
@@ -134,23 +131,28 @@ docker build -t marathon-envs .
 - **Classical** (Hopper/Walker/Ant): `max_steps=1M`, `batch_size=16–32`
 - **Terrain variants**: `max_steps=50M`, `batch_size=32`
 
-## ML-Agents Custom Patches
+## ML-Agents Migration Notes
 
-`Changes.md` is the authoritative migration guide when updating ml-agents versions. Key patches applied to 0.14.1:
+The project was upgraded from ML-Agents 0.14.1 (local patch) to 4.0.2 (UPM). `Changes.md` documents the original 0.14.1 patches that are now superseded. Key C# API changes made during the 4.0.2 migration:
 
-- CLI args `--spawn-env`, `--num-spawn-envs` added to `Academy.cs`
-- `EnvSpawner`, `SpawnableEnv`, `SelectEnvToSpawn` integration
-- Physics simulation frequency control
-- `Agent.OnDestroy` cleanup for proper lifecycle management
-- Optional action skipping for physics efficiency
+- `using MLAgents` → `using Unity.MLAgents` / `Unity.MLAgents.Sensors` / `Unity.MLAgents.Actuators`
+- `AgentReset()` → `OnEpisodeBegin()`
+- `CollectObservations()` → `CollectObservations(VectorSensor sensor)`
+- `AgentAction(float[] v)` → `OnActionReceived(ActionBuffers actions)`
+- `AddVectorObs(x)` → `sensor.AddObservation(x)`
+- `Done()` → `EndEpisode()`
+- `GetStepCount()` → `StepCount` (property)
+- `GetCumulativeReward()` → `CumulativeReward` (property)
+- Barracuda 0.6.1-preview → Unity Sentis 2.2.1 (inference engine replacement)
+- `Agent.Instantiate(...)` → `Object.Instantiate(...)`
 
 ## Development Workflow
 
 1. Modify C# environment logic in `UnitySDK/Assets/MarathonEnvs/Scripts/` or `Agents/Scripts/`
-2. Build Unity project for target platform (Windows `.exe`, Linux `x86_64`)
+2. Build Unity 6000.3.15f1 project for target platform (Windows `.exe`, Linux `x86_64`)
 3. Run training with `mlagents-learn` against the built executable
-4. Deploy trained `.nn` model back into Unity for inference testing
-5. For Gym/SAC training: use the Python wrapper in `marathon-envs/`
+4. Deploy trained `.onnx` model back into Unity for inference testing
+5. For Gymnasium/SAC training: use the Python wrapper in `marathon-envs/`
 
 ## Branch Workflow
 
