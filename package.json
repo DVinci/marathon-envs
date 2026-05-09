@@ -1,0 +1,30 @@
+{
+  "name": "marathon-envs",
+  "version": "1.0.0",
+  "description": "A set of high-dimensional continuous control environments for use with Unity ML-Agents Toolkit.",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:format": "playwright test tests/format.spec.ts",
+    "test:consistency": "playwright test tests/consistency.spec.ts",
+    "test:links": "playwright test tests/links.spec.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DVinci/marathon-envs.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/DVinci/marathon-envs/issues"
+  },
+  "homepage": "https://github.com/DVinci/marathon-envs#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "glob": "^13.0.6",
+    "js-yaml": "^4.1.1"
+  }
+}

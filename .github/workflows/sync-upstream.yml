@@ -1,0 +1,26 @@
+name: Sync from Upstream
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # Daily 7am UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Unity-Technologies/marathon-envs.git
+          git fetch upstream
+          git checkout master
+          git merge upstream/master --no-edit && git push origin master || \
+            gh issue create --title "Upstream sync conflict" \
+              --body "Manual merge needed: git fetch upstream && git merge upstream/master"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
