@@ -4,5 +4,8 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"dotnet.preferCSharpExtension": true,
+		"dotnet.defaultSolution": "UnitySDK/UnitySDK.sln"
+	}
 }

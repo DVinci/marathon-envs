@@ -85,19 +85,19 @@ python -m pytest marathon-envs/marathon_envs/tests/test_gym.py
 
 ### PPO training (ml-agents)
 
+**From Unity Editor** (no built exe needed):
+```bash
+mlagents-learn config/marathon_envs_config.yaml --train --run-id=<run_name>
+# Wait for "Listening on port 5004", then press Play in Unity Editor.
+# A popup appears — select the environment and click GO.
+```
+
+**From a built executable**:
 ```bash
 mlagents-learn config/marathon_envs_config.yaml --train \
   --env="envs\MarathonEnvs\Unity Environment.exe" \
   --run-id=<run_name> \
-  --spawn-env=<EnvironmentName-v0> \
-  --num-spawn-envs=<N>
-```
-
-### Train from Unity Editor (development — no built exe needed)
-
-```bash
-mlagents-learn config/marathon_envs_config.yaml --train --run-id=<run_name> --spawn-env=<EnvironmentName-v0>
-# Then press Play in Unity Editor (connects on port 5004)
+  --env-args --spawn-env=<EnvironmentName-v0> --num-spawn-envs=<N>
 ```
 
 ### Headless / server training
