@@ -4,8 +4,10 @@
 /UnitySDK/[Oo]bj/
 /UnitySDK/[Bb]uild/
 /UnitySDK/[Bb]uilds/
-/UnitySDK/[Pp]ackages/
+/UnitySDK/[Pp]ackages/[Pp]ackage[Cc]ache/
 /UnitySDK/[Uu]nity[Pp]ackage[Mm]anager/
+/UnitySDK/[Uu]ser[Ss]ettings/
+/UnitySDK/[Ll]ogs/
 /UnitySDK/Assets/AssetStoreTools*
 /UnitySDK/Assets/Plugins*
 /UnitySDK/Assets/Gizmos*
