@@ -1157,3 +1157,177 @@ OpenAI ES as a drop-in replacement for `mlagents-learn`. The ES trainer replaces
 
 **Research direction:**
 NEAT or HyperNEAT for joint morphology + control co-evolution. Evolve the ragdoll joint limits and body proportions alongside the control network — the agent discovers its own body plan.
+
+---
+
+## Parameterized Gait Styles
+
+Masculine/feminine, young/old, drunk/sober, tired/rested — and any blend between them. Marathon-envs already has style transfer infrastructure (`StyleTransfer002Agent.cs`, 6 style environments). This section covers how to extend it to a parameterized, continuous style space.
+
+### What Each Style Actually Changes
+
+Every gait style maps to specific kinematic differences. Understanding these helps design both MoCap labels and reward shaping:
+
+| Style | Stance width | Stride length | Cadence | Hip sway | Posture | Arm swing |
+| --- | --- | --- | --- | --- | --- | --- |
+| Masculine | Wide | Long | Medium | Low | Upright | Wide, shoulder-driven |
+| Feminine | Narrow | Medium | Higher | High (lateral) | Upright | Close to body |
+| Young | Medium | Long | High | Medium | Upright, bouncy | Natural |
+| Old | Wide (balance) | Short | Slow | Low | Slightly hunched | Reduced |
+| Energetic | Medium | Long | High | Medium | Upright | Exaggerated |
+| Tired | Wide | Short | Slow | Low | Hunched, head down | Minimal |
+| Drunk | Wide (unstable) | Irregular | Variable | High (random) | Swaying | Compensatory |
+| Injured | Asymmetric | Short on hurt side | Slow | Compensatory lean | Guarded | Asymmetric |
+| Confident | Wide | Long | Medium | Low | Very upright | Broad |
+| Fearful | Narrow | Short | Quick | Tucked | Hunched | Close |
+
+### Three Levels of Implementation
+
+#### Level 1 — One Policy per Style (Current Approach Extended)
+
+Train a separate network for each style using the existing `StyleTransfer002Agent` pipeline. Simple, already works, produces high-quality individual styles.
+
+**Limitation:** no blending. You can't get "slightly drunk" or a smooth transition from sober to drunk over time. N styles = N separate training runs.
+
+**When to use:** small fixed set of styles (4–6) where transitions aren't needed.
+
+#### Level 2 — Conditional Policy (Continuous Style Vector)
+
+Single network receives a style embedding `z` alongside the standard observation:
+
+```csharp
+// Observation construction in CollectObservations():
+sensor.AddObservation(standardProprioception);  // joints, velocities, etc.
+sensor.AddObservation(styleVector);              // e.g. float[4]
+```
+
+The style vector encodes style axes:
+
+```text
+styleVector = [instability, energy, posture_hunch, stride_width]
+              [0.0 → 1.0,   0.0→1.0, 0.0→1.0,     0.0→1.0    ]
+
+sober+rested = [0.0, 1.0, 0.0, 0.5]
+drunk        = [0.8, 0.6, 0.3, 0.9]
+old+tired    = [0.1, 0.2, 0.7, 0.7]
+```
+
+**Blending at runtime:**
+
+```csharp
+// Smooth style transition: sober → drunk over 10 seconds
+float drunkProgress = Mathf.Clamp01(timeDrunk / 10f);
+styleVector = Vector4.Lerp(soberStyle, drunkStyle, drunkProgress);
+```
+
+The policy produces a gait that smoothly interpolates between the two reference styles. No additional training needed for in-between states — the network generalizes across the style space if trained with varied style vectors.
+
+**Training:** randomize `styleVector` each episode, provide matching MoCap reference to the DeepMimic reward. The network learns that style input predicts which reference to match.
+
+#### Level 3 — CAMDM (Get It for Free)
+
+CAMDM was trained on the **100STYLE dataset** — 100 distinct locomotion styles including age variations, emotional gaits, impaired gaits (drunk, tired), and character styles (masculine, feminine, military, sneaky, etc.). The pre-trained 20MB ONNX model covers all of these.
+
+Integrating CAMDM as the kinematic layer (roadmap T2-D) gives you all 100 styles immediately:
+
+```text
+Game state (style parameter + player input)
+      ↓
+CAMDM (20MB ONNX, Unity Sentis, 60+ FPS)
+      ↓ target pose per frame, conditioned on style
+DReCon physics feedback policy (marathon-envs trained)
+      ↓ physical corrective actions
+PhysX ragdoll
+```
+
+Style selection is a conditioning input to CAMDM — change the style index and the kinematic target changes, which the physics layer tracks. This is the shortest path to the full style palette.
+
+### MoCap Data for Style Training
+
+| Dataset | Styles | License | Access |
+| --- | --- | --- | --- |
+| 100STYLE | 100 locomotion styles (age, emotion, impairment) | Research | [100style.edwsmit.com](https://100style.edwsmit.com) |
+| CMU MoCap | Large general library, some stylistic variation | Free | mocap.cs.cmu.edu |
+| AMASS | 40+ hours, diverse actors and styles | Academic | amass.is.tue.mpg.de |
+| Edinburgh Loco | Specific walking style annotations | Research | homepages.inf.ed.ac.uk |
+| SFU MoCap | Varied motions and actors | Free | mocap.cs.sfu.ca |
+
+**100STYLE is the priority** — it's specifically annotated for the styles the user described and is what CAMDM was trained on.
+
+### AdaptNet for Fast Style Addition
+
+From the roadmap (T1-C): pre-train a base walking policy, then inject a small latent modifier conditioned on the style label. Each new style takes 10–30 minutes to adapt, not a full retraining run.
+
+The Roblox paper explicitly demonstrates smooth interpolation in the latent space between trained styles — moving the style vector continuously produces valid in-between gaits not seen during training.
+
+```text
+Pre-trained policy (frozen) + Latent modifier (small MLP, trained per style)
+      │
+style_vector → modifier computes Δz
+      │
+base_policy_latent + Δz → modified action
+```
+
+### Physics Perturbations as Style Shortcuts
+
+For **impairment styles**, you can bypass MoCap entirely and produce emergent style-like behavior through physics perturbations during training:
+
+| Target style | Perturbation | Training mechanism |
+| --- | --- | --- |
+| Drunk | Random balance forces on torso | Agent trained with constant perturbations develops swaying recovery gait |
+| Tired | Reduce all max joint torques to 30–50% | Agent with weakened joints develops energy-conserving shuffle |
+| Injured leg | Weaken one leg's joints (DomainRandomization.cs) | Asymmetric gait emerges from compensating for weak side |
+| Heavy armor | Add mass to torso/limbs | Slower, more deliberate movements emerge from physics |
+
+These emergent gaits aren't identical to MoCap-recorded human impairment, but they're physically plausible and often more natural-looking than hand-animated equivalents, because the physics simulation imposes real biomechanical constraints.
+
+### Continuous Style Evolution at Runtime
+
+The most compelling game use case: style parameters that evolve continuously based on game state:
+
+```csharp
+void UpdateStyle() {
+    // Tiredness increases with distance traveled
+    styleVector.energy = 1f - Mathf.Clamp01(distanceTraveled / maxEndurance);
+
+    // Drunkness fades over time after drinking
+    styleVector.instability = Mathf.Lerp(styleVector.instability, 0f, Time.deltaTime * soberRate);
+
+    // Injury accumulates from damage
+    styleVector.asymmetry = Mathf.Clamp01(rightLegDamage / maxHealth);
+
+    // Age is fixed per character
+    styleVector.posture = characterAge / 100f;
+}
+```
+
+The policy receives the updated `styleVector` each frame. Gait transitions smoothly without any state machine or animation blending logic — the network handles it continuously.
+
+### Reward Shaping for Style Dimensions (Without MoCap)
+
+Some style axes can be rewarded directly without reference clips:
+
+```csharp
+// Hip sway reward (masculine=low, feminine=high)
+float hipSway = Mathf.Abs(hipBone.localPosition.x - previousHipPos.x);
+float swayReward = targetHipSway - Mathf.Abs(hipSway - targetHipSway);
+
+// Energy level reward (energetic=high effort allowed, tired=penalize high effort more)
+float effortPenalty = GetEffortNormalized() * (1f + tirednessFactor * 2f);
+
+// Stride width reward
+float strideWidth = Mathf.Abs(leftFoot.position.x - rightFoot.position.x);
+float widthReward = -Mathf.Abs(strideWidth - targetStrideWidth);
+```
+
+This approach requires no MoCap. The reward encodes the biomechanical signature of the style directly. Useful for styles that are hard to find in MoCap databases (very specific character archetypes).
+
+### Connection to Existing Marathon-Envs
+
+`StyleTransfer002Animator.cs` already drives a kinematic reference pose that `StyleTransfer002Agent.cs` tracks with physics. Extending to parameterized styles:
+
+1. Replace the single FBX clip with a CAMDM model conditioned on a style vector (T2-D)
+2. Or: add `styleVector` as extra observation to the existing conditional policy
+3. Or: use AdaptNet latent injection on any trained walking policy (T1-C)
+
+The physics layer (`MarathonAgent`, `BodyManager002`, `Muscle002`) is unchanged regardless of which style approach is used.
