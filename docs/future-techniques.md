@@ -6,6 +6,89 @@ Techniques are organized into three tiers based on implementation complexity and
 
 ---
 
+## Foundation — Unity Implementation Map
+
+Before implementing any new technique, the Unity-side character rig must be stable. These are engineering prerequisites, not research tasks.
+
+### Body Representation
+
+Two options in Unity for articulated physics characters:
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| `Rigidbody` + `ConfigurableJoint` | Supports kinematic loops; flexible for game hacks | More tuning for stability; what marathon-envs already uses |
+| `ArticulationBody` hierarchy | Reduced-coordinate solver; cleaner for robot-like chains | No kinematic loops; less common in game characters |
+
+**Recommendation:** Stay with `Rigidbody` + `ConfigurableJoint` (marathon-envs current). Only migrate to `ArticulationBody` if the character behaves like a strict kinematic tree (e.g., robotics-style humanoid).
+
+### Minimum Observation / Action API
+
+```text
+Observation:
+  root position, orientation, linear velocity, angular velocity
+  joint local rotations + angular velocities
+  contacts per body part (binary)
+  target animation phase or future target pose window
+  player command: desired velocity, facing, action token
+  terrain probes / heightmap / raycasts (for terrain envs)
+
+Action:
+  per-joint target rotation (PD targets — preferred over direct torques)
+  optional per-joint strength/stiffness scale
+```
+
+Prefer PD target rotations over direct torques for first implementations — easier to stabilize in PhysX and aligns with how marathon-envs `Muscle002.cs` already works.
+
+### Training Stack Decision
+
+| Stack | Best use | Notes |
+| --- | --- | --- |
+| Unity ML-Agents PPO/SAC | First Unity-native baseline | Good for balance, terrain, task rewards; harder for AMP without custom trainer |
+| Python trainer + ML-Agents env | Serious research port | Use `mlagents_envs` bridge; algorithm complexity stays in Python |
+| Train in Isaac/MuJoCo, export ONNX | Fast algorithm validation | Expect PhysX retuning; works for MLP policies |
+| C# RL trainer in Unity | Avoid initially | Large maintenance burden |
+
+### Runtime Inference
+
+Unity Sentis (ONNX) for trained policies:
+
+- Export deterministic MLP or small recurrent models first
+- Avoid exporting stochastic sampling, replay buffers, or diffusion loops until a simple policy works
+- Check Sentis operator support early: `Loop`, `Scan`, `Multinomial` have backend limits
+- For complex policies: export a compact action head; implement post-processing in C#
+
+### Unity Active-Ragdoll Reference Repositories
+
+Useful engineering references for the physical rig before learning begins:
+
+| Repo | Stars | Notes |
+| --- | --- | --- |
+| [ashleve/ActiveRagdoll](https://github.com/ashleve/ActiveRagdoll) | ~200 | Animated target skeleton + PID follower skeleton — clearest architecture demo |
+| [sergioabreu-g/active-ragdolls](https://github.com/sergioabreu-g/active-ragdolls) | ~150 | Maintainable pattern: one animated body, physical body tracks target rotations |
+| [TildeAsterisk/Physicanim](https://github.com/TildeAsterisk/Physicanim) | ~100 | Unity package: converts humanoid to active ragdoll, includes builder + controller |
+| [Balint-H/modular-agents](https://github.com/Balint-H/modular-agents) | ~36 | ML-Agents extension: modular reward modules + DReCon/DeepMimic/AMP references; active 2026 |
+| [Sohojoe/ActiveRagdollStyleTransfer](https://github.com/Sohojoe/ActiveRagdollStyleTransfer) | ~145 | Extends marathon-envs with style-transfer for active ragdolls via ML-Agents |
+| [kressdev/RagdollTrainer](https://github.com/kressdev/RagdollTrainer) | ~73 | Minimal Unity + ML-Agents framework for ragdoll balance/locomotion training |
+
+**Key lesson:** Before adding RL, make the active ragdoll robust under animation following, partial loss of strength, impacts, and get-up transitions. Learned policies cannot compensate for an unstable physics rig.
+
+### Concrete Prototype Milestones
+
+Work through these in order before implementing any research technique:
+
+1. **Passive ragdoll scene** — Import humanoid, generate colliders/joints, verify stable falls and collisions
+2. **Active animation follower** — Add animated target skeleton; physical skeleton tracks target rotations with PD/PID; tune joint drives, masses, solver iterations, fixed timestep
+3. **Player-directed locomotion** — Hand-authored or animation-driven controller: walk, turn, jump, fall, get-up; add contact sensors and terrain probes
+4. **ML-Agents baseline** — Train balance and velocity-following tasks; keep observation/action spaces close to future research policies
+5. **Reference-motion imitation** — Add phase-conditioned motion tracking reward; start with one walk/run clip before attempting broad motion libraries
+6. **ONNX policy runtime** — Export trained policy, verify Sentis inference matches Python output
+
+### Algorithm Training Reference (Python Side)
+
+Use [xbpeng/MimicKit](https://github.com/xbpeng/MimicKit) as the primary Python-side reference for DeepMimic, AMP, and ASE-style imitation. It supersedes the deprecated `DeepMimic` and `amp` repos with a cleaner, modular architecture. The Unity observations/actions must match the training environment before exporting any ONNX policy.
+
+---
+
 ## Tier 1 — Near-Term (Extend Current Marathon-Envs Directly)
 
 These require no new training infrastructure. They extend or replace components that already exist in the codebase.

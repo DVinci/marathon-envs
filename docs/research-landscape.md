@@ -57,8 +57,11 @@ Marathon-envs' core loop: **RL (PPO/SAC) + explicit pose-matching reward + activ
 | PULSE | 2024 | ICLR | Distilled universal prior from large imitator | [ZhengyiLuo/PULSE](https://github.com/ZhengyiLuo/PULSE) |
 | MaskedMimic | 2024 | SIGGRAPH | Masked motion inpainting — unified multi-task | [NVlabs/ProtoMotions](https://github.com/NVlabs/ProtoMotions) |
 | SONIC | 2024 | SIGGRAPH | Supersizing motion tracking — whole-body control | [NVlabs/GR00T-WholeBodyControl](https://github.com/NVlabs/GR00T-WholeBodyControl) |
+| PLT | 2025 | SIGGRAPH | Per-part codebooks; compositional skill learning without forgetting | [jinseokbae/plt](https://github.com/jinseokbae/plt) |
+| AMOR | 2025 | SIGGRAPH | Pareto-front multi-objective RL; post-training reward-weight tuning | No public code |
+| UniPhys | 2025 | ICCV | Diffusion-based unified planner + controller, no separate planning | [wuyan01/UniPhys](https://github.com/wuyan01/UniPhys) |
 
-**Evolution:** ASE (unsupervised discovery) → CALM (conditioning on goals) → C·ASE (subset-based training) → PULSE (distillation from large teacher) → MaskedMimic (masking replaces skill selection).
+**Evolution:** ASE (unsupervised discovery) → CALM (conditioning on goals) → C·ASE (subset-based training) → PULSE (distillation from large teacher) → MaskedMimic (masking replaces skill selection) → PLT (per-part decomposition avoids catastrophic forgetting) → AMOR (Pareto front enables post-training tuning).
 
 ---
 
@@ -90,7 +93,8 @@ Marathon-envs' core loop: **RL (PPO/SAC) + explicit pose-matching reward + activ
 | --- | --- | --- | --- | --- |
 | Learned Motion Matching | 2022 | SIGGRAPH | Neural approximation compresses database 50× | [Ubisoft La Forge](https://github.com/ubisoft-laforge/learned-motion-matching) |
 | CAMDM | 2024 | SIGGRAPH | Diffusion model for motion generation with Unity ONNX demo | [AIGAnimation/CAMDM](https://github.com/AIGAnimation/CAMDM) |
-| Environment-Aware MM | 2023 | — | Terrain-aware feature extraction | — |
+| Environment-Aware MM | 2025 | SIGGRAPH Asia | Terrain-aware feature extraction for complex scenes | [UPC ViRVIG](https://github.com/JLPM22/MotionMatching) |
+| MAMM | 2025 | SIGGRAPH | Metric-aligning matching from arbitrary control signals (sketches, audio) | — |
 | MMVR | 2022 | SCA | Motion matching for VR with sparse sensors | [UPC-ViRVIG/MMVR](https://github.com/UPC-ViRVIG/MMVR) — Unity 6 |
 
 **Key resource:** [JLPM22/MotionMatching](https://github.com/JLPM22/MotionMatching) — production-quality Unity 6, MIT license, 561 stars, ONNX support. Best starting point for a kinematic layer.
@@ -159,6 +163,22 @@ Marathon-envs' core loop: **RL (PPO/SAC) + explicit pose-matching reward + activ
 | PMP | 2024 | — | Part-wise motion priors for interactions | [jinseokbae/pmp](https://github.com/jinseokbae/pmp) |
 | MaskedManipulator | 2024 | — | Whole-body manipulation | — |
 | Neural State Machine | 2019 | SIGGRAPH Asia | Character-scene interaction via state machine | [AI4Animation](https://github.com/sebastianstarke/AI4Animation) |
+
+---
+
+### 9A. Musculoskeletal & Biomechanical Simulation
+
+**What it is:** Using anatomically detailed muscle actuators (instead of joint torques) to produce more realistic, emergent biomechanical gaits. The musculoskeletal model provides a strong physical prior that can replace MoCap entirely.
+
+**Marathon-envs relevance: LOW-MEDIUM** — Muscle002.cs uses simplified joint motors, not full musculoskeletal simulation. FreeMusco is notable because it produces locomotion **without any MoCap** — the physics of muscles alone drives gait discovery.
+
+| Paper | Year | Key Advance | Code |
+| --- | --- | --- | --- |
+| Flexible Muscle-Based Locomotion | 2012 | Bipedal locomotion from spinal reflexes + muscles (SIGGRAPH Asia) | — |
+| GaitNet | 2022 | Anatomically-parameterized gait families (SIGGRAPH) | — |
+| FreeMusco | 2025 | Motion-free musculoskeletal RL — no MoCap needed (SIGGRAPH Asia) | — |
+
+**FreeMusco note:** Learns bipedal/quadrupedal gaits from energy-aware RL using only the musculoskeletal structure as prior. Downstream goal navigation and path following emerge from latent space conditioning. If marathon-envs ever replaces `Muscle002.cs` joint motors with physiological muscle models, FreeMusco provides the training approach.
 
 ---
 

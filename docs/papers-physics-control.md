@@ -320,6 +320,77 @@ L = w_pose × ||pos_sim - pos_ref||²
 
 ---
 
+## 10. PLT — Part-Wise Latent Tokens as Adaptable Motion Priors
+
+Bae et al. — SIGGRAPH 2025, Seoul National University
+
+**Core idea:** Instead of one shared latent code for the whole body (ASE/PULSE), learn separate per-part codebooks (torso, arms, legs) using VQ-style discrete tokens. Each body part has its own skill vocabulary. Adaptation to new motions or datasets updates only the relevant part's codebook, not the entire network.
+
+**What makes it special:** Solves catastrophic forgetting — a standing challenge when extending ASE/PULSE to new datasets. Part-wise updates let you add new lower-body skills without overwriting arm skills. Compositional behaviors emerge from combining part codes at runtime.
+
+**Architecture** — per-part VQ-VAE codebooks + conditional policy:
+
+- Per-part tokenizers: VQ-VAE codebooks for torso, arms, legs independently
+- Motor policy: π(a | s, z_torso, z_arms, z_legs) — conditioned on per-part codes
+- Adaptation module: fine-tune only the relevant part's codebook for new data
+- Diversity objective: encourages different codes → different behaviors per part
+
+**Key results:**
+
+- Extends to unseen scenarios via per-part adaptation without full retraining
+- Preserves previously learned skills when adding new motion datasets
+- Compositional: combine "zombie arm swing" with "normal bipedal gait" via code mixing
+- Outperforms PULSE on multi-dataset generalization tasks
+
+**Marathon-envs application:**
+
+- The 6 style-transfer environments differ mainly in upper-body style (Jazz arms, MMA punch, backflip torso)
+- PLT can adapt only the arm/torso codebook for each new style while keeping the locomotion (leg) codebook fixed
+- Adding new style environments doesn't require retraining the entire network
+- Intermediate application: add new dance style without touching existing walking/running skills
+
+**ONNX export:** Per-part codebook lookups + policy MLP — feasible. Codebook tables can be serialized as constant ONNX inputs.
+
+**Code:** [jinseokbae/plt](https://github.com/jinseokbae/plt) — IsaacGym, PyTorch. Official.
+
+---
+
+## 11. AMOR — Adaptive Character Control through Multi-Objective Reinforcement Learning
+
+Alegre et al. — SIGGRAPH 2025, Disney Research + ETH Zurich
+
+**Core idea:** Train a single RL policy conditioned on a continuous reward-weight vector ω ∈ Δ^m spanning the Pareto front of competing objectives (motion quality, task performance, energy efficiency, style). Instead of committing to a fixed reward weighting during training, the policy learns to behave optimally for any ω sampled from the weight simplex.
+
+**What makes it special:** Post-training reward-weight tuning with no retraining. Once trained, a designer can slide between "maximum motion quality" and "maximum energy efficiency" (or any other trade-off) in real time by changing ω. This is the RL equivalent of a parameterized multi-style controller — except the "style" is defined by reward weights rather than motion clips.
+
+**Architecture** — Pareto-conditioned policy with reward-weight input:
+
+- Augmented policy: π(a | s, ω) — standard MLP augmented with reward-weight vector ω as input
+- Pareto-front training: uniformly sample ω from the weight simplex at each episode start
+- Objectives (example): `r = ω_1 × r_quality + ω_2 × r_task + ω_3 × r_energy`
+- Evaluated on bipedal locomotion transfer to physical robot (Unitree H1)
+
+**Key results:**
+
+- Single policy covers full Pareto front of competing objectives
+- Post-training slider changes motion character without retraining
+- Transfers to real hardware after weight-tuning (tested on Unitree H1)
+- Motion quality degrades gracefully as energy weight increases
+
+**Marathon-envs application:**
+
+- Each marathon-envs reward is already a weighted sum (forward velocity + energy penalty + upright reward)
+- Replace fixed weights with an ω input vector — existing training runs reused
+- At inference: tune energy-vs-speed trade-off without retraining
+- Game design use: different ω values produce "tired" vs "energetic" locomotion without separate environments
+- Compatible with existing PPO training — only the observation input changes
+
+**ONNX export:** Policy MLP with ω concatenated to observation — trivially exported.
+
+**Code:** No public code (arXiv 2505.23708). Architecture fully described; straightforward to implement from scratch.
+
+---
+
 ## Quick Reference
 
 | Paper | Year | Key Advance | Training Cost | ONNX | Priority |
@@ -333,3 +404,5 @@ L = w_pose × ||pos_sim - pos_ref||²
 | C·ASE | 2023 | Subset training, clean skill boundaries | 2–3 weeks | ✓ | Tier 2 |
 | PULSE | 2024 | Distilled universal prior, fast downstream | 1 wk + 48 hr/task | ✓ | Tier 2 |
 | MaskedMimic | 2024 | Single model for all control tasks | 15–20 days | ✓ | Tier 3 |
+| PLT | 2025 | Per-part codebooks — add skills without forgetting | ~2 wks (adapter) | ✓ | Tier 2 ext. |
+| AMOR | 2025 | Pareto-front ω input — post-training tuning | ~1 wk (input change) | ✓ | Tier 1 ext. |
