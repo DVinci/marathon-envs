@@ -540,3 +540,107 @@ A gun in the right hand only shifts CoM right, requiring leftward lean. The agen
 3. How to modulate arm swing (the loaded arm swings less freely)
 
 Training exclusively on symmetric loads (both hands, uniform armor) produces an agent that fails badly on asymmetric loads. Always include asymmetric configurations in the DR distribution.
+
+---
+
+## Large Agent Crowds (Zombie Mobs, Enemy Swarms)
+
+Fully physics-simulated crowds of RL-controlled agents are technically feasible — but require the right architecture to hit real-time frame rates. No shipped game has done this yet; it's genuine unexplored territory.
+
+### Core Principle: One Policy, N Instances
+
+All agents in the crowd share a single trained policy — one set of weights in memory. Each agent instance maintains its own observation and action buffers (~a few KB each). The per-agent memory cost is trivial; the constraint is physics simulation.
+
+Train one zombie agent. Deploy the policy 100 times.
+
+### Physics Is the Bottleneck
+
+A full MarathonMan ragdoll is ~17 Rigidbodies + 14 ConfigurableJoints. PhysX cost scales roughly linearly with active Rigidbody count:
+
+| Ragdoll complexity | Bodies per agent | 30 agents total | Feasibility at 60 fps |
+| --- | --- | --- | --- |
+| Full MarathonMan | 17 | 510 Rigidbodies | Marginal (i7-class CPU) |
+| Simplified humanoid | 7 | 210 Rigidbodies | Comfortable |
+| Capsule + limbs | 5 | 150 Rigidbodies | Very comfortable |
+
+**Design implication:** build a purpose-made zombie ragdoll at 5–7 bodies. Torso, head, two arms, two legs is sufficient for convincing physical behavior. You don't need individual fingers, collarbone, or sternum.
+
+### Physics Level of Detail (LoD)
+
+The standard game-industry solution for large crowds: run different simulation fidelity based on distance from the camera/player.
+
+```text
+Distance from player    Simulation mode
+─────────────────────────────────────────
+< 10m  (5–10 agents)   Full ragdoll + RL policy at full frequency
+10–30m (10–20 agents)  Simplified ragdoll + RL policy every 3 frames
+30–60m (20–50 agents)  Kinematic animation driven by policy output (no physics)
+> 60m  (rest of crowd) Billboard / impostor, no simulation
+```
+
+Agents transition between levels as they move relative to the player. The player can't perceive the difference at medium-to-far range.
+
+### Batched Inference
+
+Rather than 50 separate Sentis forward passes per frame, collect all agent observations into a single batched tensor and run one GPU dispatch. Sentis supports batched inference. Cost comparison:
+
+- **Unbatched:** N kernel launches, N CPU↔GPU transfers → expensive for N > 5
+- **Batched:** 1 kernel launch, 1 transfer, GPU parallelizes across agents → scales to 100+ agents with marginal cost increase
+
+Implementation: a central `ZombieSwarmBrain` MonoBehaviour collects observations from all active agents each `FixedUpdate`, runs a single batched `Model.Execute()`, then distributes actions back. Each zombie reads its slice of the output tensor.
+
+### Staggered Decision Updates
+
+Not every agent needs a policy decision every physics step. Stagger updates by agent index:
+
+```csharp
+// Agent i makes a decision only on frames where (frame % decisionInterval == i % decisionInterval)
+bool makeDecision = (Time.frameCount % decisionInterval) == (agentIndex % decisionInterval);
+```
+
+At 60 fps with `decisionInterval = 3`: each agent decides at 20 Hz, which is still faster than human perception for locomotion. This reduces inference load by 3× for free.
+
+### Navigation Layer (Hierarchical Architecture)
+
+The RL policy handles local physics (balance, recovery, collision response). A separate navigation layer handles global pathfinding toward the player. This is the same hierarchical pattern described in the Hierarchical RL section above.
+
+**Practical setup:**
+
+1. Unity NavMesh computes a path to the player for each zombie (cheap, runs on CPU, standard Unity feature)
+2. NavMesh agent gives a `desiredDirection` vector (2 floats: x, z)
+3. The RL policy receives `desiredDirection` as part of its observation alongside standard proprioception
+4. The policy learns to locomote physically toward the goal direction, recovering from collisions and terrain
+
+The RL policy never needs to know global map layout. It only needs to know "go this way and stay upright."
+
+### Training for Crowd Behavior
+
+Train a single-agent zombie in isolation first:
+
+- Task: move toward a target position, recover from perturbations (falls, pushes)
+- Observation: proprioception + goal direction + distance to goal
+- Reward: goal proximity + upright + alive time
+
+For crowd-specific behavior (agent-to-agent collision response, separation), one of two approaches:
+
+**Option A — Emergence via physics:** just spawn multiple agents. PhysX ragdoll-to-ragdoll contact forces handle separation naturally. No explicit crowd coordination needed. Agents push each other out of the way as a side effect of normal locomotion.
+
+**Option B — Multi-agent observation:** add nearby agent positions/velocities to each agent's observation (nearest 3 agents, relative position and velocity). Agent learns to route around them. Requires multi-agent training setup.
+
+Option A is the practical starting point. Emergence via physics contact is computationally cheap, requires zero additional training, and looks physically plausible.
+
+### Feasibility Estimate (RTX 2070 Super, i7-class CPU)
+
+| Mode | Active RL agents | Physics agents | Approx. cost |
+| --- | --- | --- | --- |
+| Conservative | 10 full ragdoll | 10 | Comfortable 60 fps |
+| Practical crowd | 20 full ragdoll | 40 simplified | Achievable with LoD |
+| Ambitious | 30 simplified + LoD | 100 total | Possible with batching + staggering |
+
+The CPU is the binding constraint (PhysX single-threaded). GPU inference cost is negligible with batching. On higher-end CPU hardware (12+ core), the practical crowd tier becomes very comfortable.
+
+### What Makes This Novel
+
+No shipped game has a crowd of RL-policy-driven fully physics-simulated humanoids. Existing physics crowd games (Gang Beasts, TABS) use hand-crafted active ragdolls, not trained RL policies. The closest research is multi-agent locomotion (e.g., DeepMimic multi-character) but these run offline, not at game frame rates with a live player.
+
+The combination of: shared policy + batched Sentis inference + physics LoD + NavMesh goal direction makes this achievable today with marathon-envs as the training backbone.
