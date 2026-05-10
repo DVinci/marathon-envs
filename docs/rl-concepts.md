@@ -644,3 +644,208 @@ The CPU is the binding constraint (PhysX single-threaded). GPU inference cost is
 No shipped game has a crowd of RL-policy-driven fully physics-simulated humanoids. Existing physics crowd games (Gang Beasts, TABS) use hand-crafted active ragdolls, not trained RL policies. The closest research is multi-agent locomotion (e.g., DeepMimic multi-character) but these run offline, not at game frame rates with a live player.
 
 The combination of: shared policy + batched Sentis inference + physics LoD + NavMesh goal direction makes this achievable today with marathon-envs as the training backbone.
+
+---
+
+## Mob Orchestration and Pack Hunting
+
+Coordinated group behavior — encirclement, flanking, wave attacks — layered on top of individual locomotion policies. The architecture separates concerns cleanly: the individual policy handles physics, the conductor handles strategy.
+
+### Architecture: Conductor + Individual Policies
+
+The practical game-dev architecture is two layers operating at different timescales:
+
+```text
+[Mob Conductor]  runs every 1–2 seconds
+      │  assigns subgoal positions to each zombie
+      ▼
+[NavMesh Pathfinder]  per zombie, continuous
+      │  converts subgoal → next-step direction vector
+      ▼
+[RL Locomotion Policy]  per zombie, every frame
+      │  takes (proprioception + goal direction) → physical actions
+      ▼
+[PhysX Ragdoll]  physics simulation
+```
+
+The RL locomotion policy is already trained (from the crowd section above). The conductor and NavMesh are added on top without retraining the individual policy — the policy already accepts a goal direction as input.
+
+### Conductor: Rule-Based vs RL
+
+**Start rule-based.** A behavior tree or state machine is fast to iterate, predictable, and debuggable. Upgrade to RL only if emergent complexity is required.
+
+**Rule-based conductor logic (sketch):**
+
+```csharp
+void UpdateMobStrategy() {
+    Vector3 playerPos    = player.transform.position;
+    Vector3 playerVel    = player.GetComponent<Rigidbody>().velocity;
+    int     activeAgents = zombies.Count(z => z.IsActive);
+
+    if (activeAgents < 3) {
+        // Too few to encircle — all rush
+        AssignSubgoals_Rush(playerPos);
+    } else if (PlayerIsEscaping(playerVel)) {
+        // Player moving fast — intercept predicted position
+        AssignSubgoals_Intercept(playerPos, playerVel, lookaheadSeconds: 1.5f);
+    } else if (AllOnSameSide(playerPos)) {
+        // Mob clumped — redistribute around player
+        AssignSubgoals_Encircle(playerPos, activeAgents);
+    } else {
+        // Default: maintain encirclement, tighten slowly
+        AssignSubgoals_Tighten(playerPos, closingSpeed: 0.2f);
+    }
+}
+```
+
+**Encirclement geometry** (pure math, no RL):
+
+```csharp
+void AssignSubgoals_Encircle(Vector3 center, int count) {
+    for (int i = 0; i < count; i++) {
+        float angle   = (360f / count) * i * Mathf.Deg2Rad;
+        float radius  = encircleRadius;
+        Vector3 subgoal = center + new Vector3(Mathf.Cos(angle) * radius, 0, Mathf.Sin(angle) * radius);
+        zombies[i].SetSubgoal(subgoal);
+    }
+}
+```
+
+Each zombie receives a subgoal position. NavMesh converts that to a direction. The RL policy walks there physically.
+
+### Pack Hunting Behaviors
+
+#### Encirclement
+
+Each agent occupies a distinct angular arc around the player. Agents that share an arc with an ally move laterally to fill uncovered arcs.
+
+**Emergent version (reward shaping):** give a team reward proportional to angular coverage of the player. Agents self-organize — rushing from the same direction as an ally yields zero marginal reward, so they spread out.
+
+**Angular coverage reward:**
+
+```csharp
+// Compute how many distinct 45° sectors around the player are occupied
+float CoverageReward(Vector3 playerPos, List<Zombie> zombies) {
+    bool[] sectors = new bool[8];
+    foreach (var z in zombies) {
+        Vector3 dir   = (z.position - playerPos).normalized;
+        int sectorIdx = Mathf.FloorToInt((Mathf.Atan2(dir.z, dir.x) + Mathf.PI) / (Mathf.PI / 4));
+        sectors[sectorIdx % 8] = true;
+    }
+    return sectors.Count(s => s) / 8f; // [0,1]
+}
+```
+
+#### Interception (Cutting Off Escape Routes)
+
+Instead of giving each zombie the player's current position as a subgoal, give a predicted future position:
+
+```csharp
+Vector3 intercept = playerPos + playerVel * lookaheadSeconds;
+```
+
+Agents that are faster than the player converge ahead of them. Agents too far away fall back to encirclement. The conductor chooses per-agent whether to intercept or encircle based on each zombie's distance and speed.
+
+#### Wave Attacks
+
+Divide zombies into cohorts. Only cohort 0 attacks; cohorts 1 and 2 hold back. When cohort 0 is neutralized (or a timer elapses), cohort 1 rushes. This keeps the player under continuous pressure while preventing all zombies from being dispatched simultaneously.
+
+The conductor rotates cohort assignments each wave — survivors from cohort 0 join cohort 2; cohort 1 becomes cohort 0.
+
+#### Flanking
+
+Designate zombie roles at spawn or episode start: `Rusher` (direct approach), `Flanker_L` (approach from player's left), `Flanker_R` (approach from player's right). Each role gets a different subgoal position:
+
+```csharp
+zombies[0].subgoal = playerPos;                              // Rusher: direct
+zombies[1].subgoal = playerPos + playerRight * flankOffset;  // Flanker R
+zombies[2].subgoal = playerPos - playerRight * flankOffset;  // Flanker L
+```
+
+The individual locomotion policy is identical for all roles — only the subgoal differs. No per-role retraining.
+
+### Multi-Agent RL (For Emergent Coordination)
+
+When you want coordination to emerge from training rather than be programmed explicitly:
+
+**MAPPO (Multi-Agent PPO)** is the strongest practical baseline:
+
+- **Training:** centralized critic receives all agents' observations concatenated → better credit assignment ("my reward came from ally's action, not mine")
+- **Inference:** each agent's policy uses only local observations → decentralized, O(N) compute at runtime
+- **Compatible with PPO:** marathon-envs already uses PPO; MAPPO is a direct extension
+
+**Team reward structure for pack hunting:**
+
+```python
+# Individual reward components
+r_individual = proximity_to_player * 0.3   # each agent rewarded for being close
+r_team       = attack_landed * 0.7         # shared when any agent lands a hit
+
+# Total team reward
+r_total = r_individual + r_team
+```
+
+High weight on team reward forces agents to learn that coordinated attacks (where distraction by one enables attack by another) yield more reward than isolated rushes.
+
+**ML-Agents limitation:** native ML-Agents has no built-in CTDE (centralized training, decentralized execution) support. Options:
+
+| Path | Effort | What you get |
+| --- | --- | --- |
+| Shared reward + local obs (emergent) | Low — works in ML-Agents today | Weak coordination, emergent separation |
+| PettingZoo + MAPPO + ONNX export | Medium — Python only, then export | Strong coordination, more training complexity |
+| Custom centralized critic in ML-Agents | High — requires training code changes | Best result, most work |
+
+**Start with Option 1.** Shared reward + ally positions in observations produces surprisingly good emergent encirclement without any CTDE complexity.
+
+### Observation Design for Coordination
+
+Add to each individual zombie's existing observation:
+
+```csharp
+// Nearest N allies: relative position (3 floats) + velocity (3 floats) each
+for (int i = 0; i < nearestAllies; i++) {
+    sensor.AddObservation(transform.InverseTransformPoint(allies[i].position)); // local space
+    sensor.AddObservation(allies[i].velocity);
+}
+
+// Optional: conductor subgoal (in local space)
+sensor.AddObservation(transform.InverseTransformPoint(assignedSubgoal));
+
+// Optional: role embedding (if using explicit roles)
+sensor.AddObservation(roleOneHot); // [1,0,0] = rusher, [0,1,0] = flankerL, etc.
+```
+
+Nearest 3 allies adds 18 floats to the observation. This is small relative to the proprioception vector and trains quickly.
+
+### The Left 4 Dead Director as Reference
+
+Left 4 Dead's AI Director is a rule-based orchestrator that controls zombie spawn timing, placement, and type to maintain a target tension level. It doesn't control individual zombie locomotion (kinematic) but the concept directly applies here:
+
+- Director monitors player stress (health, ammo, movement speed)
+- When stress drops below threshold: spawn more zombies, trigger specials
+- When stress exceeds threshold: give player a break
+
+This macro-level director pairs naturally with the RL locomotion layer — the director manages game feel, the RL agents handle physical execution.
+
+### Self-Play for Adversarial Sharpening
+
+Once the zombie policy and conductor are working, train against an adaptive player agent via self-play:
+
+1. Train zombie policy vs scripted player → basic pursuit
+2. Train player policy vs frozen zombie policy → player learns to escape
+3. Train zombie policy vs new player policy → zombies adapt
+4. Repeat → arms race that sharpens both sides
+
+Self-play is how OpenAI's hide-and-seek emergent coordination (2019) produced tool use and ramp exploitation — the adversarial pressure forced increasingly sophisticated strategies. The same mechanism applied to a zombie mob would produce pack hunting strategies the designer never programmed.
+
+### Summary: Practical Layered Architecture
+
+| Layer | Implementation | Timescale | Trained or programmed |
+| --- | --- | --- | --- |
+| Individual locomotion | RL policy (marathon-envs) | Every frame | Trained |
+| Local pathfinding | Unity NavMesh | Every frame | Programmed |
+| Subgoal assignment | Conductor (rule-based BT) | Every 1–2s | Programmed |
+| Macro strategy | Director (tension-based) | Every 5–10s | Programmed |
+| Adversarial sharpening | Self-play (optional) | Training only | Trained |
+
+Start with all programmed layers above the RL policy. Replace with RL from the bottom up as you want more emergent behavior. The individual locomotion policy is the critical piece — once that works, everything above it is additive.
