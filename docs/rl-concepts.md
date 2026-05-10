@@ -459,3 +459,84 @@ terrainRoughness  = Random.Range(0f, maxRoughness);
 ```
 
 Start with all ranges near their baseline values (wind=0, gravity=1×) and expand them progressively as training stabilizes. This is identical to the domain randomization strategy used in sim-to-real robotics (OpenAI Rubik's Cube, 2019) — the wider the randomization range during training, the more robust the deployed policy.
+
+---
+
+## Equipment Load (Center of Mass Shifts)
+
+Adding weapons, armor, and backpacks is a distinct perturbation type from the others: it changes the **action-to-effect mapping** rather than the environment. The same leg extension command produces different balance results with heavy leg armor than without — the agent must rescale its motor commands, not just compensate for an external force.
+
+### Physics of Equipment
+
+Added equipment changes three things simultaneously:
+
+- **Center of mass** — mass at an offset from the body center shifts the composite CoM in that direction
+- **Moment of inertia** — mass at the extremities (hands, feet) increases rotational inertia, making that limb sluggish to accelerate
+- **Required joint torque** — heavier limbs need more torque to produce the same angular acceleration
+
+| Equipment | Attachment | CoM shift | Primary locomotion effect |
+| --- | --- | --- | --- |
+| Backpack | Torso (rear offset) | Backward + upward | Must forward-lean; increased upright torque |
+| Chest plate | Torso (front) | Forward | Slight backward lean; heavier breathing effort |
+| Full armor suit | Distributed | Mostly uniform | All joints need more torque; slower natural frequency |
+| Gun in one hand | One hand | Lateral + arm mass | Asymmetric arm swing; contralateral lean |
+| Shield on one arm | One forearm | Lateral, large | Pronounced lateral tilt; asymmetric gait |
+| Heavy leg greaves | Both lower legs | Distal leg mass | More knee torque; shorter natural stride; slower cadence |
+
+### Implementation
+
+Modify `rb.mass` and `rb.centerOfMass` directly on the relevant body part Rigidbodies. PhysX recalculates the composite CoM and inertia tensor automatically — no extra Rigidbodies or joints needed:
+
+```csharp
+// In DomainRandomization.cs or an EquipmentManager, per episode:
+void ApplyEquipmentLoad(BodyPart002 part, float equipmentMass, Vector3 equipmentLocalOffset) {
+    Rigidbody rb = part.rb;
+    Vector3 newCoM = (rb.centerOfMass * rb.mass + equipmentLocalOffset * equipmentMass)
+                     / (rb.mass + equipmentMass);
+    rb.mass += equipmentMass;
+    rb.centerOfMass = newCoM;
+}
+```
+
+For accurate rotational dynamics with distal mass (e.g., heavy weapon at arm's end), also update `rb.inertiaTensor`. The CoM + mass change alone gets ~90% of the physical effect.
+
+**Reset on episode end:** store original `mass` and `centerOfMass` values and restore them in `OnEpisodeBegin()`.
+
+### Equipment Observation Encoding
+
+Include equipment state in the observation vector so the agent can adapt explicitly:
+
+```csharp
+// Per body part: normalized added mass and CoM offset direction
+sensor.AddObservation(equipmentMass / maxExpectedMass);      // [0,1]
+sensor.AddObservation(equipmentLocalOffset.normalized);       // 3 floats
+```
+
+For a full equipment system with many slot types, a compact encoding is sufficient: `[totalExtraMass, torsoOffset_x, torsoOffset_z, leftArmMass, rightArmMass, leftLegMass, rightLegMass]` — 7 floats covers most practical combinations.
+
+**Unobservable version:** omit equipment state from observations. The agent perceives only the effect (worse balance, different inertia) and must develop implicit robustness through DR exposure. Works but the agent develops a conservative average policy that handles neither extreme well.
+
+### Training Strategies
+
+**Domain Randomization (recommended baseline):** randomize equipment mass and attachment point each episode. Agent learns to handle the full distribution.
+
+```csharp
+float extraTorsoMass    = Random.Range(0f, maxArmorMass);
+float extraRightArmMass = Random.Range(0f, maxWeaponMass);
+```
+
+**Curriculum:** train unencumbered → add light loads → add asymmetric loads (one side only) → add full heavy configuration. Asymmetric loading is harder than symmetric — it requires lateral lean correction that symmetric training never teaches.
+
+**AdaptNet (T1-C in future-techniques.md):** the most principled approach. Their paper explicitly tested morphological adaptation including body mass changes. Pre-train the base locomotion policy unencumbered, then inject a small latent modifier conditioned on equipment state. Adapts in 10–30 minutes without retraining from scratch. Each new equipment configuration is a new "style" that AdaptNet can accommodate cheaply.
+
+**PHC multiplicative primitives:** PHC's architecture adapts torque scaling implicitly as body configuration changes, making it naturally robust to mass changes without explicit equipment observations.
+
+### Asymmetric Loading Is the Hard Case
+
+A gun in the right hand only shifts CoM right, requiring leftward lean. The agent must learn:
+
+1. Which side is heavier (from observation or proprioception)
+2. How much to lean (proportional to mass × offset distance)
+3. How to modulate arm swing (the loaded arm swings less freely)
+
+Training exclusively on symmetric loads (both hands, uniform armor) produces an agent that fails badly on asymmetric loads. Always include asymmetric configurations in the DR distribution.
