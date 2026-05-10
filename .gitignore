@@ -40,6 +40,8 @@
 # ML-Agents / TensorFlow
 /models
 /summaries
+/results
+/builds
 /envs
 /UnitySDK/Assets/ML-Agents/Plugins/Android*
 /UnitySDK/Assets/ML-Agents/Plugins/iOS*
