@@ -849,3 +849,169 @@ Self-play is how OpenAI's hide-and-seek emergent coordination (2019) produced to
 | Adversarial sharpening | Self-play (optional) | Training only | Trained |
 
 Start with all programmed layers above the RL policy. Replace with RL from the bottom up as you want more emergent behavior. The individual locomotion policy is the critical piece — once that works, everything above it is additive.
+
+---
+
+## Competitive Agent Training and Self-Play
+
+Two or more agents competing — race to a goal, physical combat, sumo, keep-away. The training mechanism is **self-play**: agents train against copies or past versions of themselves, creating an arms race that drives both to improve. AlphaGo, OpenAI Five, and AlphaStar all use this mechanism.
+
+### ML-Agents Built-In Self-Play
+
+ML-Agents has native self-play support — no custom training code needed. Add a `self_play` block to the behavior config in `marathon_envs_config.yaml`:
+
+```yaml
+behaviors:
+  CompetitiveAgent:
+    trainer_type: ppo
+    hyperparameters:
+      # ... standard PPO settings
+    self_play:
+      save_steps: 20000          # snapshot frequency (steps)
+      team_change: 100000        # steps before swapping team sides
+      swap_steps: 2000           # how often to swap current opponent snapshot
+      play_against_latest_model_ratio: 0.5  # 50% vs latest, 50% vs historical pool
+      window: 10                 # how many historical snapshots to keep
+```
+
+ML-Agents automatically:
+
+- Saves policy snapshots every `save_steps`
+- Maintains an opponent pool of the last `window` snapshots
+- Tracks an ELO rating per agent (visible in TensorBoard)
+- Manages team assignment so each agent competes fairly
+
+### Self-Play Variants
+
+| Variant | How | Risk | When to use |
+| --- | --- | --- | --- |
+| Naive (vs current self) | Both agents always use latest policy | Cycling — A beats B, B adapts, A regresses | Never in practice |
+| Historical pool | Train vs mix of current + past frozen policies | Slow progress if pool is too large | Default (ML-Agents default) |
+| League training | Multiple agent populations with different strategies | Very complex, long training | AlphaStar-scale problems |
+
+The historical pool prevents the **rock-paper-scissors cycle** (A → B → C → A) because past snapshots can't adapt back. ML-Agents' `window` parameter controls pool size — larger window = more diversity, slower convergence.
+
+### Competitive Scenario Types
+
+#### Race to Goal
+
+Two agents start at the same position; first to reach the goal wins.
+
+```text
+Reward = -distance_to_goal * 0.01   (dense — keeps learning signal alive)
+       + 1.0                         (on reaching goal first)
+       - 0.5                         (on reaching goal second)
+```
+
+**Physical interference:** since agents are ragdolls, they can body-check each other. The race becomes a strategy game — sprint directly (fast but vulnerable to block) vs position yourself to block the opponent (slower but forces detour). This emergent strategic choice doesn't exist in kinematic racing.
+
+#### Sumo (Push Out of Ring)
+
+Both agents try to push the opponent outside a circular arena. ML-Agents ships a Sumo example environment — the pattern transfers directly to marathon-envs ragdolls.
+
+```text
+Reward = +0.01 per step in ring     (survival incentive)
+       + 1.0 when opponent falls out
+       - 1.0 when self falls out
+```
+
+The ragdoll physics make sumo especially compelling: agents discover that low center-of-mass stances are harder to push, leading to emergent crouching behavior. No reward term for crouching — it emerges from the physics.
+
+#### Physical Combat
+
+Agents deal damage on contact, proportional to impact force. PhysX already computes `collision.impulse.magnitude` — use it directly:
+
+```csharp
+void OnCollisionEnter(Collision col) {
+    if (col.gameObject.CompareTag("Opponent")) {
+        float impact = col.impulse.magnitude;
+        opponentHealth -= impact * damageScale;
+    }
+}
+```
+
+"Defeat" condition: opponent health reaches zero, or opponent falls and triggers the same early-termination check as the existing marathon-envs locomotion environments (head below threshold).
+
+```text
+Reward = damage_dealt_this_step * 0.1    (dense — rewards aggression)
+       + 0.005 per step alive            (survival incentive)
+       + 1.0 on opponent defeated
+       - 1.0 on self defeated
+```
+
+#### Keep-Away / Grappling
+
+One agent holds an object (via ConfigurableJoint magic grab). The other tries to separate agent from object (break the joint by pulling with sufficient force, or knock the holder down).
+
+- Holder reward: time holding object + object stays above floor
+- Attacker reward: time object is uncontrolled + force applied to holder
+
+#### Tag / Predator-Prey
+
+Asymmetric: one agent (predator) tags the other (prey) by touching. Roles may swap on tag. Classic emergent behavior benchmark — OpenAI's hide-and-seek used this structure and produced tool use.
+
+### Reward Shaping Principles for Competition
+
+**Sparse alone is too hard:** if the only reward is win/lose, early training is pure noise — neither agent has learned enough to produce a meaningful match. Always add dense intermediate rewards.
+
+**Asymmetric reward for asymmetric games:** if roles are different (attacker vs defender), each role should have a different reward function. A single shared reward produces agents that are mediocre at both roles.
+
+**Survival incentive:** a small `+reward_per_step_alive` prevents agents from discovering that immediate self-destruction avoids negative reward. Without it, agents sometimes learn to fall over instantly to "avoid losing."
+
+**Reward clipping:** clip the combined reward to `[-1, 1]` if using mixed dense + sparse signals to prevent the sparse win/lose bonus from drowning out dense shaping rewards.
+
+### Physical Competition Scenarios for Marathon-Envs
+
+These scenarios are uniquely compelling with full ragdoll simulation — they have no kinematic equivalent:
+
+| Scenario | Setup | What emerges |
+| --- | --- | --- |
+| Sumo ring | Circular platform, push opponent off | Low stance, center-of-mass control |
+| Race with blocking | Linear track, first to goal wins | Sprint vs strategic blocking |
+| Grappling / takedown | Fall the opponent (head-to-ground) | Leverage, balance disruption |
+| King of the hill | Elevated platform, hold position longer | Defensive stance, displacement attacks |
+| Keep-away | One holds object, other separates | Tight body shielding vs pulling attacks |
+
+### Teams (2v2, NvN)
+
+ML-Agents self-play supports team-based competition natively. Each agent has a `Team ID`; agents on the same team share reward. Cooperative behavior within teams emerges from the shared team reward; competitive behavior between teams from the opposing objective.
+
+```yaml
+self_play:
+  # ... same parameters
+  # ML-Agents automatically groups agents by Team ID
+  # Team 0 trains against Team 1's frozen snapshots
+```
+
+2v2 produces more interesting emergent behavior than 1v1 — agents learn to set picks (position self to block opponent of teammate), coordinated attacks, and role specialization (one rushes, one positions defensively) without any explicit programming.
+
+### Training Curriculum for Competition
+
+Competitive training from scratch is hard: if both agents start terrible, no meaningful learning signal exists because matches are random.
+
+**Recommended curriculum:**
+
+1. **Pre-train locomotion** — run standard marathon-envs PPO until the agent can walk/run stably
+2. **Introduce scripted opponent** — a heuristic that moves toward the goal or punches directly. Easy to beat, but provides a signal
+3. **Switch to self-play** — use the pre-trained policy as the initial snapshot; both agents start at reasonable skill
+4. **Expand historical pool** — over time the pool fills with increasingly capable snapshots; the arms race begins
+
+Skipping step 1 is the most common mistake — agents spend millions of steps just learning to stand up before any competitive behavior is possible.
+
+### ELO Tracking
+
+ML-Agents computes ELO in TensorBoard under `self_play/ELO`. Use it to:
+
+- Verify skill is monotonically increasing (ELO rising over time)
+- Detect plateaus (ELO flat for long periods → policy stuck in local optimum)
+- Compare across training runs (higher ELO at convergence = better policy)
+
+ELO assumes a transitive skill ordering. If you observe **cycling** (ELO oscillates without trend), the historical pool `window` is too small — increase it so the agent trains against more diverse past versions.
+
+### Connection to Existing Marathon-Envs Infrastructure
+
+The individual locomotion policy trained in any marathon-envs environment (Walker2d, MarathonMan) is the direct starting point for competitive scenarios:
+
+- Pre-trained locomotion policy → initialize competitive agent weights via `--initialize-from`
+- Same `BodyManager002` / `Muscle002` / `MarathonAgent` stack — add competitive reward on top
+- Same ONNX export path → deploy both competing agents in Unity via Sentis at inference time
