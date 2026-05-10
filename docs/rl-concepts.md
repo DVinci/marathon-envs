@@ -301,3 +301,161 @@ This is exactly the same principle as **MaskedMimic's** binary mask — zero out
 **Progressive curriculum:** train healthy agent first → freeze weights → introduce random weakening/dismemberment and fine-tune. The pre-trained gait knowledge transfers; the agent only needs to learn compensation.
 
 **Relevant papers:** PHC (Perpetual Humanoid Control) trains a recovery controller that handles arbitrary body states. MaskedMimic's masking framework generalizes across joint subsets. Both use the binary mask observation pattern described above.
+
+---
+
+## External Perturbations (Robustness Training)
+
+Teaching the agent to maintain locomotion under external disturbances. The core RL pipeline is unchanged — what varies is what forces are applied, what the agent observes, and the training curriculum.
+
+### Observable vs Unobservable Perturbations
+
+This is the central design decision for any perturbation type:
+
+| Mode | Agent observes | Training difficulty | Generalization |
+| --- | --- | --- | --- |
+| Observable | Perturbation parameters directly (wind vector, gravity factor) | Easy — explicit adaptation | Limited to observed range |
+| Unobservable | Only proprioception (velocities, accelerations) | Hard — must develop implicit robustness | Better OOD generalization |
+| Privileged critic | Critic sees params; actor sees only proprioception | Medium | Best of both worlds |
+
+**Privileged critic is the recommended approach for games:** the actor (deployed at runtime) never needs perturbation parameters. The critic uses them during training to give better gradient signal. Throw the critic away at deployment. This is the same pattern as Asymmetric Actor-Critic (see above).
+
+---
+
+### Wind and Applied Forces
+
+**Implementation:** add a force vector to each body part's Rigidbody in `FixedUpdate`. Wind can be constant, sinusoidal (gusts), or Perlin-noise (turbulence):
+
+```csharp
+// In BodyManager002 FixedUpdate or a new WindManager component:
+Vector3 wind = windDirection * windStrength;
+foreach (var part in BodyParts) {
+    part.rb.AddForce(wind * part.dragCoefficient, ForceMode.Force);
+}
+```
+
+**DomainRandomization.cs** is the right place to randomize `windStrength` and `windDirection` per episode.
+
+**Observable version:** add `windStrength` (scalar) or `windDirection` (normalized Vector3) to the observation. Agent learns directional leaning compensation explicitly.
+
+**Unobservable version:** omit wind from observations. Agent develops wind-resistant posture through repeated exposure to random wind fields during training.
+
+---
+
+### Object Collisions and Projectiles
+
+PhysX handles collision response automatically. A thrown Rigidbody hitting the ragdoll applies an impulse force — the agent experiences it as an unexpected velocity spike in its proprioception. **No special code is needed to receive the hit.**
+
+What needs implementing:
+
+- A projectile spawner that fires objects toward the agent at random intervals during training
+- No observation change required (agent sees the effect, not the incoming object)
+- If you want the agent to dodge: add a raycast sensor pointing outward and include distance-to-nearest-object in observations
+
+**Training curriculum:**
+
+1. Train base locomotion (no projectiles)
+2. Introduce light, slow projectiles with long intervals
+3. Progressively increase mass, speed, and frequency
+4. Agent learns to absorb and recover rather than collapse
+
+**PHC's fall recovery** (see Tier 2 roadmap, T2-C) is directly useful here — the recovery controller handles the post-impact fall state. Combine perturbation robustness training with a PHC-style recovery controller for an agent that never resets.
+
+---
+
+### Terrain Perturbations
+
+**What already exists:** `TerrainGenerator.cs` and the four terrain environments (TerrainHopper, TerrainWalker, TerrainAnt, TerrainMarathonMan) already implement procedural terrain. Height samples under/around the feet are included in terrain agent observations.
+
+#### Rugged / Uneven Ground
+
+Extend `TerrainGenerator.cs` with a roughness parameter:
+
+- Low roughness: gentle undulations, agent uses existing locomotion
+- High roughness: large amplitude bumps, agent must actively balance mid-stride
+- Sample 9–16 terrain heights in a grid around the agent's feet and include them in the observation
+
+#### Ramps
+
+Easiest terrain extension. Key observation addition: body inclination (already captured via `transform.up` relative to world `Vector3.up`). Agent needs to shift center of mass forward on uphill, backward on downhill. Curriculum: 0° → 5° → 15° → 30° max slope.
+
+#### Stairs
+
+Harder than ramps due to discrete step geometry — PhysX can catch foot colliders on step edges. Mitigations:
+
+- Chamfer stair edge colliders (bevel the corner geometry)
+- Use kinematic capsule approximations for the agent's feet colliders during training
+- Add foot contact sensor to observations (which foot is grounded, contact normal)
+
+Curriculum: 2cm steps → 10cm → 20cm. Agent at 20cm step height requires a distinct high-knee gait.
+
+#### Ground Shaking (Earthquakes)
+
+Apply periodic displacement to the terrain transform or impulse forces to the agent's root Rigidbody:
+
+```csharp
+// Shake the ground:
+float shakeX = Mathf.Sin(Time.time * frequency) * amplitude;
+groundTransform.position = new Vector3(shakeX, 0, 0);
+
+// Or apply directly to agent root:
+rootRb.AddForce(new Vector3(shakeX, 0, 0), ForceMode.VelocityChange);
+```
+
+**Observable version:** expose `shakeAmplitude` and `shakeFrequency` to the agent. Agent learns to anticipate and pre-lean.
+
+**Unobservable version:** agent only feels the acceleration — develops a wider, lower stance as an implicit robustness strategy.
+
+---
+
+### Gravity Changes
+
+`Physics.gravity` is a global per-scene Vector3. For per-agent gravity override (multiple parallel environments with different gravity):
+
+```csharp
+// Cancel global gravity, apply custom gravity per body part:
+Vector3 customGravity = new Vector3(0, -9.81f * gravityMultiplier, 0);
+foreach (var part in BodyParts) {
+    part.rb.AddForce(customGravity - Physics.gravity, ForceMode.Acceleration);
+}
+```
+
+| Gravity mode | Effect | Training challenge |
+| --- | --- | --- |
+| Low (0.1–0.5×) | Agent floats, overshoots joints | Damping tuning; policy tends toward slow cautious motion |
+| High (1.5–3×) | Heavier; joints need more torque | MaxForce limits; agent may collapse if torques insufficient |
+| Sideways | Wall-running scenarios | Reward orientation must change (upright relative to custom gravity direction) |
+| Variable per episode | General gravity robustness | Agent learns to probe gravity quickly and adapt |
+
+**Observable:** include `gravityMultiplier` (scalar) in observation. Agent learns joint scaling explicitly.
+
+**Unobservable:** agent probes gravity by taking a small hop and observing how quickly it returns to ground. Requires implicit inference over recent proprioception — benefits from LSTM/GRU in the policy.
+
+---
+
+### Perturbation Observation Cheat Sheet
+
+| Perturbation | Observable input | Effect seen in proprioception |
+| --- | --- | --- |
+| Wind | Wind vector (3 floats) | Linear velocity deviation |
+| Projectile impact | — (no lookahead practical) | Sudden linear/angular velocity spike |
+| Terrain roughness | Height map samples (9–16 floats) | Foot contact normal variation |
+| Stairs | Foot contact normals + height | Sudden foot elevation changes |
+| Ground shaking | Shake amplitude + frequency | Root acceleration noise |
+| Gravity change | Gravity multiplier (1 float) | All accelerations scaled uniformly |
+
+---
+
+### DomainRandomization.cs as the Centralized Perturbation Hub
+
+`DomainRandomization.cs` already exists and runs per-episode. Extend it with all perturbation parameters:
+
+```csharp
+windStrength      = Random.Range(0f, maxWind);
+windDirection     = Random.onUnitSphere.normalized;
+gravityMultiplier = Random.Range(minGravity, maxGravity);
+terrainRoughness  = Random.Range(0f, maxRoughness);
+// Optionally schedule projectile spawns for this episode
+```
+
+Start with all ranges near their baseline values (wind=0, gravity=1×) and expand them progressively as training stabilizes. This is identical to the domain randomization strategy used in sim-to-real robotics (OpenAI Rubik's Cube, 2019) — the wider the randomization range during training, the more robust the deployed policy.
