@@ -117,3 +117,43 @@ No shipped commercial games use ML-Agents / RL for character locomotion. All suc
 - RL policies can fail unpredictably on edge cases
 - Hard to art-direct — you retrain, not animate
 - Hand-crafted ragdolls give more deterministic, tunable results
+
+---
+
+## PhysX Optimization Options
+
+PhysX is single-threaded in Unity (one thread per scene). The bottleneck is physics steps per second, not the neural network. Options in ascending order of effort:
+
+| Option | Effort | Gain | Notes |
+| --- | --- | --- | --- |
+| Reduce solver iterations | Minutes | 5–15% | `Physics.defaultSolverIterations` default is 6; 4 often works |
+| Simplified collider geometry | Hours | 10–20% | Convex hulls on ragdoll limbs, remove redundant colliders |
+| Increase `FixedDeltaTime` | Minutes | 20–50% | Fewer physics steps/second; risks simulation instability |
+| Reduce parallel env count | Minutes | Linear | Fewer spawned environments = more steps/s each |
+| DOTS/ECS rewrite | Months | 5–20× | Parallel physics across CPU cores; no ML-Agents support |
+| Better hardware | Days (cloud) | 2–4× | More cores ≠ faster per-env; CPU clock speed matters most |
+
+**Quick wins:** reducing solver iterations from 6 to 4 and simplifying collider meshes can recover 15–25% physics throughput with no visible quality loss. The `BodyManager002.cs` `FixedDeltaTime` property is already configurable per-environment.
+
+**DOTS/ECS:** theoretically the right answer but requires rewriting every `MonoBehaviour` as ECS components, reimplementing articulated ragdolls in Unity Physics, and ML-Agents has no official DOTS support. Not a near-term option.
+
+**Real hardware path:** cloud CPU VMs (c5.9xlarge, 36 vCPUs, $1.53/hr) effectively multiply environments proportionally to core count. See [cloud-training.md](cloud-training.md).
+
+---
+
+## Sentis Inference Backend
+
+Unity Sentis (ML-Agents 4.0.2) supports four inference backends controlled by `inferenceDevice` on each Brain `.asset` file:
+
+| Value | Enum | Backend | Best for |
+| --- | --- | --- | --- |
+| 0 | Default | Auto-selects GPU | Large models (>5MB) |
+| 1 | GPU (Compute) | GPU shader dispatch | Large models |
+| 2 | CPU (Burst) | SIMD-vectorized CPU | Small MLPs (marathon-envs) |
+| 3 | CPU (Fallback) | Plain C# | Debugging only |
+
+**Current state:** all marathon-envs Brain assets use `inferenceDevice: 0` (Default → GPUCompute on RTX 2070 Super).
+
+**Optimal setting for this project:** `2` (Burst). Marathon-envs policy networks are tiny (2–3 hidden layers, 256 units each, <1MB). GPU dispatch overhead dominates at this scale — Burst executes small tensor ops faster because it avoids the CPU→GPU transfer and kernel launch latency. Crossover is around 5MB model size.
+
+To change: open each `.asset` file in `UnitySDK/Assets/MarathonEnvs/Agents/Brains/` and set `m_InferenceDevice: 2`, or edit the Brain asset in the Unity Inspector under "Inference Device → CPU (Burst)". The difference is marginal for training (bottleneck is PhysX, not inference), but matters for deployed real-time inference in a game.
