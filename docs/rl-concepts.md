@@ -1015,3 +1015,145 @@ The individual locomotion policy trained in any marathon-envs environment (Walke
 - Pre-trained locomotion policy → initialize competitive agent weights via `--initialize-from`
 - Same `BodyManager002` / `Muscle002` / `MarathonAgent` stack — add competitive reward on top
 - Same ONNX export path → deploy both competing agents in Unity via Sentis at inference time
+
+---
+
+## Neuroevolution: Genetic Algorithms and Neural Networks
+
+Neural network weights are a vector of floats — that vector is a genome. Evolutionary algorithms can optimize it without gradient descent, using population selection and mutation instead. This is **neuroevolution**, and it has produced strong locomotion results on the exact MuJoCo environments that marathon-envs replicates.
+
+### Weights as Genome
+
+A network with N parameters is represented as a vector `w ∈ ℝᴺ`. Evolutionary operations:
+
+- **Mutation:** `w_child = w_parent + σ × N(0, I)` — add Gaussian noise scaled by mutation rate σ
+- **Selection:** run each individual in the environment; keep top-K by episode reward
+- **Crossover:** for two parents A and B, each weight independently drawn from A or B (uniform crossover) — but this is problematic for neural networks (see below)
+
+**The crossover problem:** weight 42 in network A and weight 42 in network B likely encode unrelated features (different training history → different representations). Averaging or swapping them destroys both. NEAT solves this; OpenAI ES avoids it entirely.
+
+### Key Algorithms
+
+#### OpenAI Evolution Strategies (ES, 2017)
+
+The most directly applicable approach. Not classical GA — no population or crossover. Instead: perturb current weights across many workers, measure fitness change, update in the direction that improved fitness:
+
+```text
+For each generation:
+  Sample perturbations ε₁...εₙ ~ N(0, I)
+  Fitness Fᵢ = evaluate(w + σεᵢ)  [run each worker independently]
+  w ← w + α/(nσ) × Σ Fᵢεᵢ        [weighted average of good perturbations]
+```
+
+This is equivalent to gradient descent on expected fitness, but computed without backpropagation — pure black-box optimization.
+
+**Results on marathon-envs environments (from the paper):** Walker2d, Hopper, Ant, HalfCheetah — same benchmarks. Comparable final performance to PPO. With 720 CPU workers: 1 hour wall-clock time for Walker2d. PPO on a single machine takes days.
+
+**Key advantage:** embarrassingly parallel. Each worker is independent — no gradient synchronization, no replay buffer coordination. CPU cluster (not GPU) is optimal, since each worker runs a short episode. This directly addresses the PhysX single-threaded bottleneck: more CPU cores = proportionally faster training.
+
+#### NEAT (NeuroEvolution of Augmenting Topologies, 2002)
+
+Evolves both weights and network topology. Structural mutations add neurons and connections:
+
+- **Weight mutation:** perturb existing weights
+- **Add connection:** add a new synapse between existing neurons
+- **Add node:** split an existing connection into two with a new neuron between
+
+**Crossover fix via innovation numbers:** every gene (weight or structural element) gets a global innovation number when it first appears. During crossover, genes with matching innovation numbers align correctly, even if network structures differ. Genes without a match are inherited from the fitter parent.
+
+**Species protection:** topologically similar networks are grouped into species. Competition happens within species first, preventing a well-performing innovation from being immediately eliminated before it matures.
+
+**Relevance to marathon-envs:** NEAT could evolve the ragdoll control network architecture, discovering how many hidden layers and what connectivity pattern works best for each environment — without manually tuning layer sizes.
+
+#### HyperNEAT
+
+Instead of evolving weights directly, evolves a small generator network (CPPN — Compositional Pattern Producing Network) that *produces* the weights as a function of neuron geometry:
+
+```text
+weight(i→j) = CPPN(position_i, position_j)
+```
+
+The CPPN captures spatial regularities — e.g., "connections between nearby neurons are stronger," "left-right symmetry in motor cortex." Scales to networks with millions of weights because you're evolving a compact ~50-parameter CPPN, not all weights directly. Naturally discovers symmetric motor patterns for symmetric bodies (humanoid limbs).
+
+#### Population-Based Training (PBT)
+
+The practical hybrid of gradient RL and evolutionary selection. Run N PPO agents in parallel with different hyperparameters:
+
+```text
+Every K training steps:
+  1. Rank agents by current episode reward
+  2. Bottom 20%: copy weights from a top-20% agent (GA selection)
+  3. Perturb hyperparameters of copied agent (GA mutation):
+     lr *= random.choice([0.8, 1.2])
+     batch_size = random.choice([512, 1024, 2048])
+  4. Continue training
+```
+
+Result: hyperparameters are automatically tuned during training, not before it. Used by DeepMind for AlphaStar. Available in Ray RLlib as `PopBasedTraining` scheduler.
+
+### Hierarchical GA → Neural Network System
+
+The user's exact framing — a two-level hierarchy where the GA drives the outer loop and gradient descent (or neuroevolution) drives the inner loop:
+
+```text
+OUTER LOOP — Genetic Algorithm (slow, coarse):
+  Population of "meta-genomes" encoding one of:
+    • Reward component weights (tune the 7 DeepMimic components)
+    • Network architecture (layer sizes, connectivity)
+    • Hyperparameters (learning rate, entropy coefficient)
+    • Morphology (ragdoll joint limits, body proportions)
+
+  Fitness function:
+    For each individual → run inner loop for N steps → return final episode reward
+
+INNER LOOP — Gradient Descent / PPO (fast, fine-grained):
+  Standard marathon-envs PPO training under the meta-genome's parameters
+  Reports cumulative reward back to outer GA
+```
+
+This is how **Neural Architecture Search (NAS)** works (Google Brain, 2017) and how **Eureka** (OpenAI, 2023) uses LLMs instead of a GA to propose reward functions that PPO then trains under.
+
+For marathon-envs, the most practical target for the GA outer loop is **reward weight search**: the 7 component weights in `StyleTransfer002Agent.cs` are currently hand-tuned. A GA can find combinations that produce more natural gaits faster than manual tuning — especially for new motion styles where intuition about weight balance is poor.
+
+### MAP-Elites: Quality-Diversity
+
+Rather than finding one best policy, MAP-Elites finds the best policy for *each cell in a behavior space* — producing a **library of diverse strategies**:
+
+```text
+Behavior space: 2D grid of (forward_velocity × energy_efficiency)
+Each cell: stores the highest-fitness policy with that behavior profile
+
+Training:
+  1. Randomly initialize a policy
+  2. Evaluate: measure fitness + behavior descriptor (velocity, efficiency)
+  3. Place in corresponding cell if better than current occupant
+  4. Mutate the policy; repeat
+```
+
+After training, you have hundreds of policies — fast-but-wasteful, slow-but-efficient, high-stepping, shuffling, etc. — all stored simultaneously.
+
+**Game application:** select from the library at runtime based on game context. Sprint policy when pursuing a player; stealth policy (slow, low energy signature) for ambush; injured-gait policy when health is low. Same training run produces all variants.
+
+**Python library:** [pyribs](https://pyribs.org/) — the standard MAP-Elites implementation, compatible with any environment that returns a fitness score and behavior descriptor vector.
+
+### Comparison for Marathon-Envs
+
+| Algorithm | Sample efficiency | Parallelism | Sparse reward | Architecture search | Best for |
+| --- | --- | --- | --- | --- | --- |
+| PPO (current) | High | Limited | Struggles | No | Dense reward locomotion |
+| OpenAI ES | Low | Perfect (CPU cluster) | Handles well | No | Alternative to PPO, massive CPU scale |
+| NEAT | Very low | Good | Handles well | Yes | Discovering architectures |
+| PBT | High | Good | Normal | Partial (hyperparams) | Auto-tuning during training |
+| GA → PPO (hierarchical) | Medium | Per-individual | Normal | Yes (any parameter) | Reward weight search, morphology |
+| MAP-Elites | Low | Good | Handles well | No | Building behavior libraries |
+
+### Practical Entry Points
+
+**Immediate (no infrastructure change):**
+GA outer loop over reward weights → run `mlagents-learn` inner loop → parse TensorBoard logs for fitness. Each GA individual is one `mlagents-learn` run. Parallelizable across machines.
+
+**Medium effort:**
+OpenAI ES as a drop-in replacement for `mlagents-learn`. The ES trainer replaces PPO; the Unity environment is unchanged. [evosax](https://github.com/RobertTLange/evosax) provides ES implementations (including OpenAI ES and CMA-ES) compatible with JAX.
+
+**Research direction:**
+NEAT or HyperNEAT for joint morphology + control co-evolution. Evolve the ragdoll joint limits and body proportions alongside the control network — the agent discovers its own body plan.
