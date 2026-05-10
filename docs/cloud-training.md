@@ -56,6 +56,24 @@ No pure "upload build → click train" managed service exists except Unity's own
 | Share/distribute trained models | Hugging Face Hub |
 | Watch for future | Unity ML-Agents Cloud |
 
+## GPU vs CPU VMs
+
+**Use CPU-only VMs.** For ML-Agents locomotion training, GPU instances are unnecessary and wasteful.
+
+The neural network is a tiny 2-layer MLP (256 hidden units). Training update time is negligible. The bottleneck is always PhysX CPU simulation — the same reason a local RTX 2070 Super sits at 100% GPU utilization *waiting for Unity*, not doing heavy compute.
+
+More CPU cores → more parallel environments via `--num-envs` → faster training wall-clock time.
+
+| Instance | vCPUs | GPU | Cost (AWS) | `--num-envs` |
+| --- | --- | --- | --- | --- |
+| `c5.9xlarge` | 36 | None | ~$1.53/hr | 36 |
+| `c5.18xlarge` | 72 | None | ~$3.06/hr | 72 |
+| `p3.2xlarge` | 8 | V100 | ~$3.06/hr | 8 |
+
+The 36-vCPU CPU VM trains ~4.5× faster than the V100 instance at half the cost for this workload.
+
+GPU instances only help if you switch to image-based observations (CNN) or transformer policies — not standard MLP locomotion agents.
+
 ## Notes
 
 - Unity Gaming Services (multiplayer, analytics) does NOT support ML-Agents training
