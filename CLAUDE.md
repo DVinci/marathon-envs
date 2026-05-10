@@ -181,3 +181,13 @@ npm run test:ui           # Playwright visual debug mode
 | `link-check.yml` | Weekly Mon 9am UTC | Checks all external URLs in markdown files |
 | `pr-labeler.yml` | Every PR | Auto-applies labels by changed file paths |
 | `sync-upstream.yml` | Daily 7am UTC | Syncs from Unity-Technologies/marathon-envs |
+
+## Documentation Directive
+
+The `docs/` folder is a living knowledge base built from Q&A sessions with the project owner. It contains:
+
+- `docs/training-guide.md` — practical training commands, performance, builds, deployment
+- `docs/rl-concepts.md` — RL theory relevant to this project
+- `docs/ecosystem.md` — tools, formats, ecosystem comparisons
+
+**ALWAYS** update or extend these documents (or create new ones) whenever the user asks questions that produce knowledge relevant to this project — RL concepts, training insights, architecture decisions, tool comparisons, Unity/ML-Agents specifics. Commit the changes to the `develop` branch. The goal is that future sessions can retrieve this knowledge by reading `docs/` rather than rediscovering it through conversation.
