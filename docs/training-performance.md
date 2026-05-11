@@ -26,7 +26,8 @@ Observed throughput and reward data from actual training runs on the development
 ### Session A — 20 environments, 1 process
 
 **Command:**
-```
+
+```bash
 mlagents-learn config/marathon_envs_config.yaml --run-id=hopper_01 --resume --no-graphics
   --env="builds/Walker2d-v0/Marathon Environments.exe"
   --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=20
@@ -66,7 +67,8 @@ mlagents-learn config/marathon_envs_config.yaml --run-id=hopper_01 --resume --no
 ### Session B — 50 environments, 1 process
 
 **Command:**
-```
+
+```bash
 mlagents-learn config/marathon_envs_config.yaml --run-id=hopper_01 --resume --no-graphics
   --env="builds/Walker2d-v0/Marathon Environments.exe"
   --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=50
@@ -204,14 +206,60 @@ Also updated Walker2d-v0 hyperparameters to reduce Python update overhead:
 
 ---
 
+## Run: walker_02 — 4×100 environments
+
+```bash
+mlagents-learn config/marathon_envs_config.yaml --run-id=walker_02 --no-graphics --resume
+  --env="builds/Walker2d-v0/Marathon Environments.exe"
+  --num-envs=4 --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=100
+```
+
+| Parameter | Value |
+| --- | --- |
+| `--num-envs` | 4 |
+| `--num-spawn-envs` | 100 |
+| Total environments | 400 |
+| Resumed from step | 283,759 |
+| Interrupted at step | 578,997 |
+| **Throughput** | **~1435 steps/s** |
+| **Est. time to 1M steps** | **~11.6 min** |
+
+Going from 20→100 envs/process (5× more) gave only **+20% throughput** — PhysX per-core saturation setting in. The sweet spot is likely around 40–50 envs/process.
+
+---
+
+## Run: walker_02 — 4×50 environments
+
+```bash
+mlagents-learn config/marathon_envs_config.yaml --run-id=walker_02 --no-graphics --resume
+  --env="builds/Walker2d-v0/Marathon Environments.exe"
+  --num-envs=4 --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=50
+```
+
+| Parameter | Value |
+| --- | --- |
+| `--num-envs` | 4 |
+| `--num-spawn-envs` | 50 |
+| Total environments | 200 |
+| Resumed from step | 578,997 |
+| Interrupted at step | 911,449 |
+| **Throughput** | **~1506 steps/s** |
+| **Est. time to 1M steps** | **~11 min** |
+
+---
+
 ## Full Comparison
 
-| Config | time_scale | Processes | Total envs | Throughput | Est. time to 1M |
-| --- | --- | --- | --- | --- | --- |
-| hopper_01 session A | unset (=1) | 1 | 20 | 61 steps/s | 4.6h |
-| hopper_01 session B | unset (=1) | 1 | 50 | 58 steps/s | 4.8h |
-| walker_02 (old config) | unset (=1) | 4 | 80 | 59 steps/s | 4.7h |
-| **walker_02 resumed** | **20** | **4** | **80** | **~1192 steps/s** | **~14 min** |
+| Config | time_scale | Processes | Envs/process | Total envs | Throughput | Est. time to 1M |
+| --- | --- | --- | --- | --- | --- | --- |
+| hopper_01 session A | unset (=1) | 1 | 20 | 20 | 61 steps/s | 4.6h |
+| hopper_01 session B | unset (=1) | 1 | 50 | 50 | 58 steps/s | 4.8h |
+| walker_02 old config | unset (=1) | 4 | 20 | 80 | 59 steps/s | 4.7h |
+| walker_02 + time_scale | 20 | 4 | 20 | 80 | 1192 steps/s | 14 min |
+| walker_02 + time_scale | 20 | 4 | 100 | 400 | 1435 steps/s | 11.6 min |
+| **walker_02 + time_scale** | **20** | **4** | **50** | **200** | **1506 steps/s** | **~11 min** |
+
+**50 envs/process is the confirmed sweet spot.** At 100 envs/process throughput actually drops — per-core PhysX overhead of managing 100 simultaneous simulations exceeds the benefit of more data.
 
 ---
 
@@ -220,7 +268,7 @@ Also updated Walker2d-v0 hyperparameters to reduce Python update overhead:
 ```bash
 mlagents-learn config/marathon_envs_config.yaml --run-id=<run_id> --no-graphics
   --env="builds/<env>/Marathon Environments.exe"
-  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=20
+  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
 ```
 
-`engine_settings` with `time_scale: 20` and `target_frame_rate: -1` is now set globally in the config and applies to all environments.
+`engine_settings` with `time_scale: 20` and `target_frame_rate: -1` is set globally in the config. `--num-spawn-envs=50` is the confirmed sweet spot for this machine (i7-3770S, 4 cores).
