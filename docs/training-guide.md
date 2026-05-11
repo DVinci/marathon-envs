@@ -95,6 +95,51 @@ Reward is noisy — look at the trend over 100k+ steps, not individual values.
 
 ---
 
+## Evaluating Training Success
+
+There is no fixed reward ceiling — success is judged by multiple signals together.
+
+### Reward curve shape
+
+A healthy run shows a clear upward trend followed by a plateau. The plateau means the policy has converged near its local optimum. A curve that never rises, or rises and then collapses, indicates a problem (bad hyperparameters, environment bug, or reward shaping issue).
+
+### Reward plateau + low standard deviation
+
+When mean reward stabilizes **and** standard deviation drops, the agent is doing the right thing consistently — not just getting lucky in some episodes. High mean + high std = sometimes lucky. High mean + low std = reliable policy.
+
+### Visual inspection
+
+Watch the agent in Unity play mode. This is the real test. A smooth, stable gait at reward 800 is better than wild lurching at reward 1200. Numbers don't capture style, energy efficiency, or fall recovery.
+
+### Entropy decay (TensorBoard)
+
+`Policy/Entropy` should decrease over training as the policy commits to specific actions. If entropy stays high throughout, the agent is still exploring randomly. If it collapses to near zero very early, exploration died and the policy may be stuck.
+
+### Perturbation test
+
+Push the agent in play mode. A well-trained walker recovers from nudges. A fragile policy (overfit to lucky episodes) falls immediately.
+
+### Reference benchmarks
+
+Walker2d-v0 (MuJoCo reference, equivalent task):
+
+- PPO: ~1500–3000 at convergence
+- SAC: ~3000–5000 at convergence
+
+This project's Walker2d-v0 is a faithful port — those are the rough targets for a fully trained policy.
+
+### Quick decision guide
+
+| Reward | Status | Action |
+| --- | --- | --- |
+| < 500 | Still learning | Keep training |
+| 500–1000 | Basic locomotion | Evaluate visually |
+| 1000–2000 | Competent | Compare to reference video |
+| 2000+ | Strong | Visual + perturbation test |
+| Plateau 500k+ steps, low std | Converged | Done (or tune and retrain) |
+
+---
+
 ## Resuming vs Starting Over
 
 - `--resume` loads from `.pt` checkpoint files in `results/<run_id>/`
