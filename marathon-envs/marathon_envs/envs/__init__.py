@@ -51,6 +51,7 @@ class MarathonEnvs(gym.Env):
         use_editor: bool = False,
         inference: bool = False,
         render_mode: Optional[str] = None,
+        multiagent: bool = True,
     ):
         """
         Environment initialization
@@ -64,7 +65,6 @@ class MarathonEnvs(gym.Env):
         :param render_mode: Gymnasium render mode (None or "rgb_array")
         """
         self.render_mode = render_mode
-        multiagent: bool = True  # force multiagent
 
         base_port = 5005
         if use_editor:
@@ -106,7 +106,7 @@ class MarathonEnvs(gym.Env):
         self.group_spec = self._env.behavior_specs[self.brain_name]
 
         self._multiagent = multiagent
-        self._n_agents = -1
+        self._n_agents = -1 if multiagent else 1
         self.visual_obs = None
         self.game_over = False
 

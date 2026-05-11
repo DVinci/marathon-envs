@@ -1,48 +1,52 @@
-import numpy as np
-from stable_baselines3 import SAC
-from marathon_envs.envs import MarathonEnvs
+import os
 from timeit import default_timer as timer
 from datetime import timedelta
-import os
 
-env_names = [
-    'Hopper-v0',
-    # 'Walker2d-v0',
-    # 'Ant-v0',
-    # 'MarathonMan-v0',
-    # 'MarathonManSparse-v0'
-    ]
-for env_name in env_names:
-    print('-------', env_name, '-------')
-    env = MarathonEnvs(env_name, 1)
+import numpy as np
+from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import CheckpointCallback
 
-    model = SAC("MlpPolicy", env, verbose=1)
+from marathon_envs.envs import MarathonEnvs
 
-    start = timer()
-    model.learn(total_timesteps=50000, log_interval=10)
-    end = timer()
-    print(env_name, 'training time', timedelta(seconds=end-start))
+ENV_NAME = "Walker2d-v0"
+ENV_PATH = os.path.join("builds", "Walker2d-v0", "Marathon Environments.exe")
+RUN_ID = "sac_walker_01"
+TOTAL_TIMESTEPS = 2_000_000
+SAVE_FREQ = 100_000
 
-    model.save(os.path.join('models', "sac_" + env_name))
-    del model
+env = MarathonEnvs(
+    ENV_NAME,
+    num_spawn_envs=1,
+    marathon_envs_path=ENV_PATH,
+    no_graphics=True,
+    multiagent=False,
+)
 
-    model = SAC.load(os.path.join('models', "sac_" + env_name))
+model = SAC(
+    "MlpPolicy",
+    env,
+    verbose=1,
+    tensorboard_log="summaries",
+    learning_rate=3e-4,
+    batch_size=256,
+    buffer_size=1_000_000,
+    learning_starts=10_000,
+    train_freq=1,
+    gradient_steps=1,
+    ent_coef="auto",
+    policy_kwargs=dict(net_arch=[256, 256]),
+)
 
-    obs, info = env.reset()
-    episode_score = 0.
-    episode_steps = 0
-    episodes = 0
-    while episodes < 5:
-        action, _states = model.predict(obs)
-        obs, rewards, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        episode_score += rewards
-        episode_steps += 1
-        env.render()
-        if done:
-            print('episode_score', episode_score, 'episode_steps', episode_steps)
-            episode_score = 0.
-            episode_steps = 0
-            episodes += 1
-            obs, info = env.reset()
-    env.close()
+checkpoint_cb = CheckpointCallback(
+    save_freq=SAVE_FREQ,
+    save_path=os.path.join("results", RUN_ID),
+    name_prefix=ENV_NAME,
+)
+
+start = timer()
+model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=checkpoint_cb, tb_log_name=RUN_ID)
+elapsed = timer() - start
+print(f"Training time: {timedelta(seconds=elapsed)}")
+
+model.save(os.path.join("results", RUN_ID, ENV_NAME + "_final"))
+env.close()
