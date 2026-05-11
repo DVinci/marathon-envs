@@ -248,7 +248,7 @@ mlagents-learn config/marathon_envs_config.yaml --run-id=walker_02 --no-graphics
 
 ---
 
-## Full Comparison
+## Full Comparison — Throughput
 
 | Config | time_scale | Processes | Envs/process | Total envs | Throughput | Est. time to 1M |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -260,6 +260,15 @@ mlagents-learn config/marathon_envs_config.yaml --run-id=walker_02 --no-graphics
 | **walker_02 + time_scale** | **20** | **4** | **50** | **200** | **1506 steps/s** | **~11 min** |
 
 **50 envs/process is the confirmed sweet spot.** At 100 envs/process throughput actually drops — per-core PhysX overhead of managing 100 simultaneous simulations exceeds the benefit of more data.
+
+## Full Comparison — Walker2d-v0 Policy Quality
+
+| Run | normalize | max_steps | Best reward | Std at best | Wall time (full) | Bimodal? |
+| --- | --- | --- | --- | --- | --- | --- |
+| walker_03 | false | 5M | 758 (4.5M) | 5.7 | ~54 min | Yes — dips to 515–530 |
+| **walker_04** | **true** | **5M** | **828 (4.5M)** | **low (1–7)** | **~64 min** | **No — stable throughout** |
+
+`normalize: true` costs ~10 more minutes (normalization statistics update adds overhead) but raises the ceiling by **+70 reward** and eliminates the bimodal instability pattern entirely.
 
 ---
 
@@ -364,10 +373,83 @@ This is the characteristic signature of a **near-stable policy**: the gait is le
 
 ### Architecture ceiling observations
 
-The 760 ceiling is likely the limit for 64-unit, `normalize: false`. The bimodal behavior would be reduced by `normalize: true`, which helps the policy handle the range of initial observation values seen during training more robustly.
+The 760 ceiling is the confirmed limit for 64-unit, `normalize: false`. The bimodal behavior was eliminated by `normalize: true` in walker_04 (see below).
 
-| Option | Requires restart? | Expected effect |
+| Option | Requires restart? | Observed effect |
 | --- | --- | --- |
-| `normalize: true` | Yes (new run_id) | Reduces bimodal dips; may push ceiling to 800–900 |
+| `normalize: true` | Yes (new run_id) | Eliminated bimodal dips; pushed ceiling from 762 → 828 |
 | `hidden_units: 128` | Yes | More capacity; marginal benefit for simple locomotion |
 | Switch to SAC | Yes | 2000–5000 at convergence |
+
+---
+
+## Run: walker_04 — normalize: true, 0 → 5M steps
+
+**Command:**
+
+```bash
+python train_ppo.py config/marathon_envs_config.yaml --run-id=walker_04 --no-graphics --force \
+  --env="builds/Walker2d-v0/Marathon Environments.exe" \
+  --num-envs=4 --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=50
+```
+
+| Parameter | Value |
+| --- | --- |
+| `--num-envs` | 4 |
+| `--num-spawn-envs` | 50 |
+| Total environments | 200 |
+| `time_scale` | 20 |
+| `batch_size` | 1024 |
+| `buffer_size` | 10240 |
+| `num_epoch` | 3 |
+| `normalize` | **true** |
+| `hidden_units` | 64 |
+| `max_steps` | 5,000,000 |
+| Start step | 0 |
+| End step | 5,000,072 |
+| Wall time | ~64 min |
+| **Throughput** | **~1,308 steps/s** |
+
+### Checkpoint progression
+
+| Checkpoint | Reward at export | Best model? |
+| --- | --- | --- |
+| 500k | 458 | — |
+| 1M | 739.4 | — |
+| 1.5M | 757.4 | — |
+| 2M | 781.7 | — |
+| 2.5M | 796.6 | — |
+| 3M | 808.9 | — |
+| 3.5M | 814.1 | — |
+| 4M | 823.2 | — |
+| **4.5M** | **828.3** | **Yes** |
+| 5M | 825.2 | — |
+
+**Best deployment checkpoint:** `Walker2d-v0-4499917.onnx` — highest mean reward (828.3). Saved as `best_model.onnx` by `train_ppo.py`.
+
+### Ceiling progression vs walker_03
+
+| Step range | walker_03 (normalize: false) | walker_04 (normalize: true) | Δ |
+| --- | --- | --- | --- |
+| 1M–2M | 680 | 781.7 | +102 |
+| 2M–3M | 731 | 808.9 | +78 |
+| 3M–4M | 754 | 823.2 | +69 |
+| 4M–5M | 762 | 828.3 | +66 |
+
+`normalize: true` adds ~66–102 reward across all stages of training — the advantage is largest early and narrows as both runs approach their ceilings.
+
+### Bimodal behavior: eliminated
+
+walker_03 showed alternating good/bad episodes (std=150–315 on bad windows). walker_04 maintained std=1–7 throughout — including the late stages where walker_03 would dive to 515–530.
+
+At 5M steps the final entropy was **0.52** (vs initial 1.43), and mean episode length reached **999 steps** — the agent rarely falls. This confirms a stable, generalized gait policy.
+
+### Recommended config for Walker2d-v0
+
+`normalize: true` is confirmed better. Update from the defaults:
+
+| Parameter | Old (walker_03) | New (walker_04) |
+| --- | --- | --- |
+| `normalize` | false | **true** |
+
+Already set in `config/marathon_envs_config.yaml`.

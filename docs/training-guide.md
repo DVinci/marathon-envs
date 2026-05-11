@@ -169,14 +169,21 @@ The `.exe` is launched automatically by mlagents-learn via `--env=`.
 
 ## Expected Rewards (Walker2d-v0)
 
-| Steps | Expected Reward | Notes |
-|---|---|---|
-| 0–100k | 13–120 | Early stumbling |
-| 100k–400k | 100–500 | Learning basic gait |
-| 400k–1M | 300–700 | Refining locomotion |
-| 1M+ | 700–1000+ | Competent walking |
-| 5–10M | 1000–2000+ | Good locomotion |
-| 10M+ | 2000–3000 | Strong performance |
+Values are from actual training runs on this machine. `normalize: true` raises the ceiling at every stage.
+
+| Steps | normalize: false | normalize: true | Notes |
+| --- | --- | --- | --- |
+| 0–500k | 13–458 | 13–458 | Early stumbling; no difference yet |
+| 500k–1M | 300–700 | 400–740 | normalize advantage becomes visible |
+| 1M–2M | 600–680 | 740–782 | normalize: true ~+100 reward |
+| 2M–3M | 680–731 | 782–809 | ceiling rising, gap ~70–80 |
+| 3M–5M | 731–762 | 809–828 | normalize: true plateau is ~828 at 5M |
+| 5–10M | ~1000–2000 | expected | PPO ceiling; switch to SAC for 3000+ |
+
+**Observed ceilings on this machine (i7-3770S, 4×50 envs, 5M steps):**
+
+- `normalize: false`: 762 (walker_03) — bimodal instability, dips to 515
+- `normalize: true`: 828 (walker_04) — stable, std=1–7 throughout
 
 Reward is noisy — look at the trend over 100k+ steps, not individual values.
 
