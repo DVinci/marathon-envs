@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_REWARD_RE = re.compile(r"Mean Reward:\s+([-\d.]+)")
+_REWARD_RE = re.compile(r"Mean Reward:\s+([-\d]+(?:\.\d+)?)")
 _EXPORT_RE = re.compile(r"Exported\s+(.+\.onnx)")
 
 
