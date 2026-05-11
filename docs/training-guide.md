@@ -1,35 +1,50 @@
 # Training Guide
 
-## Commands
+## PPO Training (ML-Agents)
 
-### Editor training (no build needed)
-```bash
-mlagents-learn config/marathon_envs_config.yaml --run-id=<run_name>
-```
-Then press **Ctrl+P** in Unity to Play. Select environment in popup → GO.
-Press **Ctrl+P** again to stop.
+### Recommended command
 
-### Headless executable training
+Use `train_ppo.py` instead of `mlagents-learn` directly — it passes all arguments through unchanged and additionally saves `best_model.onnx` whenever a new peak reward is reached at a checkpoint boundary.
+
 ```bash
-mlagents-learn config/marathon_envs_config.yaml --run-id=<run_name> --no-graphics --env="builds/<env>/Marathon Environments.exe" --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=<N>
+python train_ppo.py config/marathon_envs_config.yaml --run-id=<run_name> \
+  --no-graphics --env="builds/<env>/Marathon Environments.exe" \
+  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
 ```
 
 ### Resume training
+
 ```bash
-mlagents-learn config/marathon_envs_config.yaml --run-id=<run_name> --resume --no-graphics --env="builds/<env>/Marathon Environments.exe" --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=<N>
+python train_ppo.py config/marathon_envs_config.yaml --run-id=<run_name> --resume \
+  --no-graphics --env="builds/<env>/Marathon Environments.exe" \
+  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
 ```
 
-### Multiple parallel Unity processes (better CPU utilization)
+### Editor training (no build needed)
+
 ```bash
-mlagents-learn config/marathon_envs_config.yaml --run-id=<run_name> --no-graphics --env="builds/<env>/Marathon Environments.exe" --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=5
+mlagents-learn config/marathon_envs_config.yaml --run-id=<run_name>
 ```
-`--num-envs` = number of Unity processes (one per CPU core)
-`--num-spawn-envs` = environments per process
+
+Then press **Ctrl+P** in Unity to Play. Select environment in popup → GO.
+Press **Ctrl+P** again to stop. (`train_ppo.py` also works here.)
+
+### Key flags
+
+| Flag | Meaning |
+| --- | --- |
+| `--num-envs` | Number of Unity processes — one per CPU core |
+| `--num-spawn-envs` | Environments per process — sweet spot is 50 on i7-3770S |
+| `--no-graphics` | Headless mode; required for multi-process runs |
+| `--resume` | Resume from `.pt` checkpoints in `results/<run_id>/` |
 
 ### Monitor training
+
 ```bash
 tensorboard --logdir=summaries
 ```
+
+Open `http://localhost:6006` in a browser. TensorBoard is written to `summaries/<run_id>/`.
 
 ---
 
@@ -43,23 +58,95 @@ tensorboard --logdir=summaries
 
 ---
 
+## SAC Training (Stable Baselines 3)
+
+SAC is an off-policy algorithm that reuses experience from a replay buffer, making it far more sample-efficient than PPO. It typically reaches higher final reward in fewer steps, at the cost of running with fewer parallel environments.
+
+### Setup
+
+```bash
+cd marathon-envs
+pip install -e .
+pip install stable-baselines3
+```
+
+### Run
+
+```bash
+python stable_baselines_sac_train.py
+```
+
+Edit the constants at the top of the script to change environment, run ID, or step budget:
+
+```python
+ENV_NAME = "Walker2d-v0"
+ENV_PATH = os.path.join("builds", "Walker2d-v0", "Marathon Environments.exe")
+RUN_ID   = "sac_walker_01"
+TOTAL_TIMESTEPS = 2_000_000
+```
+
+### Output files
+
+All saved to `results/<RUN_ID>/`:
+
+| File | Contents |
+| --- | --- |
+| `best_model.zip` | Best policy by mean episode reward — updated in-place |
+| `<EnvName>_<step>.zip` | Periodic checkpoint every `SAVE_FREQ` steps |
+| `<EnvName>_final.zip` | Policy state at end of training |
+| `monitor.csv` | Per-episode reward and length log |
+
+TensorBoard logs go to `summaries/<RUN_ID>/`.
+
+### PPO vs SAC comparison
+
+| | PPO (ML-Agents) | SAC (Stable Baselines 3) |
+| --- | --- | --- |
+| Algorithm type | On-policy | Off-policy (replay buffer) |
+| Parallel envs | 200 (4 × 50) | 1 |
+| Steps/second | ~1263 | ~150 |
+| Steps to reward ~1500 | ~10M | ~500k–1M |
+| Wall time to reward ~1500 | ~130 min | ~60–110 min |
+| Final policy quality | 1500–3000 | 3000–5000 |
+| Resume support | Yes (`.pt` checkpoints) | Yes (`.zip` checkpoints) |
+
+PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy. For Walker2d on this machine, SAC reaches better quality faster in wall-clock time.
+
+---
+
 ## Performance
 
-### Bottleneck analysis
-- PhysX ragdoll simulation is **single-threaded** — the fundamental limit
-- GPU (neural network updates) is NOT the bottleneck — it hits 100% waiting for Unity
-- Adding more environments in one process doesn't help past the PhysX limit
-- Use `--num-envs` to spawn multiple Unity processes across CPU cores
+### Bottleneck
 
-### Observed performance (RTX 2070 Super, 20 environments)
-- ~60 steps/second regardless of Editor or headless build
-- Walker2d-v0 (1M steps): ~4.5 hours
-- Rendering overhead (Editor vs headless) is negligible vs physics cost
+PhysX ragdoll simulation is **single-threaded per Unity process** — the hard limit. The GPU is not the bottleneck; it sits idle waiting for Unity to deliver observations.
+
+**Critical setting:** without `engine_settings.time_scale`, Unity runs at 1× real-time (~60 steps/s regardless of environment count). Always set:
+
+```yaml
+engine_settings:
+  time_scale: 20
+  target_frame_rate: -1
+  quality_level: 0
+```
+
+This is already set in `config/marathon_envs_config.yaml`.
+
+### Observed performance (i7-3770S, RTX 2070 Super)
+
+| Config | Throughput | Time to 1M steps |
+| --- | --- | --- |
+| 1 process, 20 envs, no time_scale | 61 steps/s | 4.6 h |
+| 4 processes, 20 envs/proc, time_scale=20 | 1192 steps/s | 14 min |
+| 4 processes, 50 envs/proc, time_scale=20 | **1506 steps/s** | **11 min** |
+| 4 processes, 100 envs/proc, time_scale=20 | 1435 steps/s | 11.6 min |
+
+**50 envs/process is the confirmed sweet spot** for a 4-core CPU. Beyond that, per-core PhysX overhead exceeds the benefit of more data.
 
 ### To go faster
-- More CPU cores → more `--num-envs` processes
+
+- More CPU cores → increase `--num-envs` (one process per core)
 - GPU-accelerated physics (Isaac Lab) → thousands of envs on GPU
-- Better algorithms (SAC) → fewer steps needed for same quality
+- Switch to SAC → fewer total steps needed for same or better quality
 
 ---
 
@@ -165,6 +252,40 @@ Environments using motion capture reference (Walking, Running, Dancing, etc.) ha
 With PPO + linear LR decay, "too long" usually means **wasted compute, not broken training**. A run that plateaued at 15M and continues to 20M hasn't been harmed — it just burned CPU for nothing. Active degradation is uncommon.
 
 **Rule of thumb:** if the reward curve has been flat for 20–30% of `max_steps`, stop and export. You are done.
+
+---
+
+## Checkpoint Selection
+
+Not every checkpoint is equal. The best checkpoint to deploy is the one with the **highest mean reward and lowest standard deviation** — meaning the policy performs well *consistently*, not just on lucky episodes.
+
+### What the metrics mean
+
+- **High mean + low std**: agent completes most episodes without falling; reliable for deployment
+- **High mean + high std**: sometimes great, sometimes falls early — noisy policy
+- **Low std alone**: consistent but potentially consistently mediocre — check the mean too
+
+When they conflict (e.g., checkpoint A: mean=730 std=150 vs checkpoint B: mean=700 std=10), prefer B for inference. Prefer A only if you intend to keep training.
+
+### best_model.onnx / best_model.zip
+
+Both training scripts track this automatically:
+
+- **`train_ppo.py`** saves `results/<run_id>/<BehaviorName>/best_model.onnx` — updated whenever mean reward improves at a checkpoint boundary
+- **`stable_baselines_sac_train.py`** saves `results/<run_id>/best_model.zip` — updated whenever mean episode reward improves during training
+
+The "best" here is peak mean reward in a checkpoint window, not peak at the exact summary moment. The policy at the checkpoint boundary is the closest available snapshot.
+
+### Checkpoint interval and file sizes
+
+ML-Agents checkpoints are tiny because the network is small (64 units × 2 layers):
+
+| File | Size |
+| --- | --- |
+| `.pt` (resume checkpoint) | ~189 KB |
+| `.onnx` (inference model) | ~34 KB |
+
+To capture finer-grained best moments, lower `checkpoint_interval` in the config. The default is 500,000 steps. Setting it to 50,000 costs ~19 MB over a 5M-step run with `keep_checkpoints: 5` (only 5 `.pt` files kept at any time).
 
 ---
 
