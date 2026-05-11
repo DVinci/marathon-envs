@@ -272,3 +272,81 @@ mlagents-learn config/marathon_envs_config.yaml --run-id=<run_id> --no-graphics
 ```
 
 `engine_settings` with `time_scale: 20` and `target_frame_rate: -1` is set globally in the config. `--num-spawn-envs=50` is the confirmed sweet spot for this machine (i7-3770S, 4 cores).
+
+---
+
+## Run: walker_03 — Clean baseline, 0 → 5M steps
+
+**Command:**
+
+```bash
+mlagents-learn config/marathon_envs_config.yaml --run-id=walker_03 --no-graphics
+  --env="builds/Walker2d-v0/Marathon Environments.exe"
+  --num-envs=4 --env-args --spawn-env=Walker2d-v0 --num-spawn-envs=50
+```
+
+| Parameter | Value |
+| --- | --- |
+| `--num-envs` | 4 |
+| `--num-spawn-envs` | 50 |
+| Total environments | 200 |
+| `time_scale` | 20 |
+| `batch_size` | 1024 |
+| `buffer_size` | 10240 |
+| `num_epoch` | 3 |
+| `normalize` | false |
+| `hidden_units` | 64 |
+| `max_steps` | 5,000,000 |
+
+### Session 1 — 0 → 1M steps (max_steps=1M, original config)
+
+| Parameter | Value |
+| --- | --- |
+| Start step | 0 |
+| End step | 1,000,038 |
+| Session wall time | ~13.3 min |
+| **Throughput** | **~1263 steps/s** |
+
+**Reward progression:**
+
+| Steps | Mean Reward | Std |
+| --- | --- | --- |
+| 0–100k | 8–22 | low |
+| 100k–400k | 22–151 | moderate |
+| 400k–700k | 129–320 | high |
+| 700k–910k | 281–492 | high |
+| 910k–1M | 392 | — |
+
+Peak reward at 1M: **492 at step 910k**, ending at **392 at step 1M**.
+
+### Session 2 — 1M → 3.41M (resumed, max_steps extended to 5M)
+
+Resume started with a dip to reward 17 at step 1.01M (policy was resuming from a declining checkpoint), then rapidly recovered.
+
+| Steps | Mean Reward | Notes |
+| --- | --- | --- |
+| 1.0M | 17 | Resume warmup |
+| 1.1M | 281 | Recovering |
+| 1.2M | 540 | Back to pre-resume level |
+| 1.5M | 588 | Climbing |
+| 2.0M | 659 | Clear upward trend |
+| 2.5M | 650 | Approaching ceiling |
+| 2.75M | 731 | New peak |
+| 3.0M | 723 | Plateau zone begins |
+| 3.41M | 688 | Oscillating 650–740 |
+
+**Plateau analysis:** From ~2.5M to 3.4M (900k steps), reward oscillates between 650–740 with no net gain. Peak values of 730–740 appear to be the ceiling for this architecture (64 hidden units, `normalize: false`).
+
+**Throughput (session 2):** ~1,280 steps/s · **Wall time per million steps: ~13 min**
+
+### Architecture ceiling observations
+
+The 720–740 ceiling is consistent with the 64-unit, 2-layer network + `normalize: false` configuration. To break through would require:
+
+| Option | Requires restart? |
+| --- | --- |
+| `normalize: true` | Yes (new run_id) |
+| `hidden_units: 128` | Yes |
+| Switch to SAC | Yes |
+
+SAC typically reaches 2000–5000 on Walker2d-equivalent tasks at full convergence.
