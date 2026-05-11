@@ -104,6 +104,63 @@ Reward is noisy — look at the trend over 100k+ steps, not individual values.
 
 ---
 
+## Hyperparameter Configuration
+
+All hyperparameters live in `config/marathon_envs_config.yaml`, one block per behavior name (e.g. `Walker2d-v0`). There are no global defaults — each environment declares all its values explicitly.
+
+### Parameter reference
+
+| Parameter | What it controls |
+|---|---|
+| `batch_size` | Samples per gradient update — larger = more stable, slower |
+| `buffer_size` | Experiences collected before any update — should be >> `batch_size` |
+| `learning_rate` | Step size — start at `3e-4`; lower to `1e-4` for style transfer |
+| `beta` | Entropy bonus — keeps exploration alive; set near zero (`1e-5`) once style is found |
+| `epsilon` | PPO clip ratio — limits how much one update changes the policy; keep at `0.2` |
+| `lambd` | GAE lambda — bias-variance tradeoff for advantage estimation; `0.95` is standard |
+| `num_epoch` | Passes over the buffer per update — lower (3) for complex envs, higher (10) for simple |
+| `normalize` | Online observation normalization — enable for complex bodies (MarathonMan, terrain) |
+| `hidden_units` | Neurons per layer — `64` for classical, `256` for style transfer |
+| `gamma` | Discount factor — raise to `0.9999` for sparse reward (agent must plan far ahead) |
+| `time_horizon` | Steps before forced episode cut — raise to `1000` for terrain (longer episodes needed) |
+
+### Profiles by environment group
+
+| Group | `batch_size` | `lr` | `hidden_units` | `max_steps` | Notable settings |
+| --- | --- | --- | --- | --- | --- |
+| Classical (Hopper, Walker, Ant) | 16–32 | 1e-3 | 64 | 1M | Defaults; fast convergence |
+| MarathonMan-v0 | 64 | 3e-4 | 64 | 10M | `normalize: true` |
+| Style transfer (Walking/Running/Dancing) | 768 | 1e-4 | 256 | 64–128M | `beta: 1e-5`, `num_epoch: 3`; very long runs |
+| Terrain variants | 32 | 3e-4 | 64 | 50M | `beta: 0.1` (high exploration), `time_horizon: 1000` |
+
+**Why terrain uses `beta: 0.1`:** agents need to explore more aggressively to discover footing on uneven surfaces. High entropy keeps them trying varied strategies.
+
+**Why style transfer uses `beta: 1e-5`:** once the policy finds the reference pose, you want it to commit and refine rather than keep experimenting. Near-zero entropy is intentional.
+
+### Starting point for a new environment
+
+Copy the `Walker2d-v0` block (ML-Agents defaults). Increase `max_steps` as needed. Add `normalize: true` if the observation space is large or has mixed-scale values.
+
+### Network size: bigger is not better in RL
+
+Larger networks do not automatically produce better policies for the same task. This is a key difference from supervised deep learning.
+
+**Why bigger hurts in RL:**
+
+- Sample efficiency drops — more parameters need more gradient steps; PPO's trust-region constraint limits how much the policy can change per update, so a large network may be undertrained at the same step budget
+- RL gradients are noisy; small networks are easier to optimize under that noise
+- A 64-unit MLP cannot memorize noise — it's forced to learn general locomotion structure; a 512-unit network can fit noise and produce a fragile policy
+
+**When larger networks do help:**
+
+- Style transfer uses 256 units because matching a motion capture pose requires learning complex correlations across many joints simultaneously
+- Visual/pixel observations (CNNs need more capacity)
+- Long-horizon memory (larger LSTM hidden state)
+
+**Rule of thumb:** start at 64 units / 2 layers. Only scale up if the reward curve plateaus well below the expected ceiling. The bottleneck in this project is almost always sample count (physics throughput), not model capacity.
+
+---
+
 ## Deploying Trained Models in Unity
 
 1. Find the exported `.onnx` in `results/<run_id>/<BehaviorName>.onnx`

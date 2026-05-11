@@ -124,6 +124,24 @@ Option 2 is most practical for this repo — MarathonMan has enough joints to de
 
 **When position history helps**: noisy or partially observable environments where explicit state is unavailable (real robot sensors, optical cameras).
 
+### Fixed Observation Size Requirement
+
+Standard MLP policies (used by PPO and SAC, including all marathon-envs environments) require a **fixed-size observation vector declared before training starts**. The input layer has a fixed number of neurons baked into the network weights — you cannot change it between episodes or mid-training without breaking the model.
+
+In ML-Agents, the observation count is enforced at environment startup and again when loading a `.onnx` model for inference. If `CollectObservations()` produces a different count than what the model was trained on, Unity throws a mismatch error.
+
+**Techniques for variable-situation scenarios:**
+
+| Technique | How | When to use |
+| --- | --- | --- |
+| Padding + mask | Always send max-size vector; zero unused slots; include a binary mask | Variable number of nearby entities (obstacles, allies) |
+| Top-K aggregation | Sort by distance, keep closest K, discard the rest | Unlimited world entities, only nearest K matter |
+| Max/mean pooling | Aggregate all entities to a fixed summary vector | Order-invariant sets |
+| LSTM/GRU | Per-step input is still fixed; hidden state carries memory | Sequential or partially observable scenarios |
+| Attention / Transformer | Variable-length tokens, fixed embedding size | Research; not native in ML-Agents |
+
+**In this project:** every agent class has a fixed joint count, sensor count, and contact flag count. These are defined structurally by the ragdoll prefab. If you add a body part, you must retrain — the existing `.onnx` model is incompatible because its input dimension changed.
+
 ---
 
 ## Partial Observability (Optical Sensors)
