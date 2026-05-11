@@ -319,34 +319,55 @@ mlagents-learn config/marathon_envs_config.yaml --run-id=walker_03 --no-graphics
 
 Peak reward at 1M: **492 at step 910k**, ending at **392 at step 1M**.
 
-### Session 2 — 1M → 3.41M (resumed, max_steps extended to 5M)
+### Session 2 — 1M → 5M (resumed, max_steps extended to 5M)
 
-Resume started with a dip to reward 17 at step 1.01M (policy was resuming from a declining checkpoint), then rapidly recovered.
+Resume started with a dip to reward 17 at step 1.01M (policy resuming from a declining checkpoint), then rapidly recovered.
 
-| Steps | Mean Reward | Notes |
-| --- | --- | --- |
-| 1.0M | 17 | Resume warmup |
-| 1.1M | 281 | Recovering |
-| 1.2M | 540 | Back to pre-resume level |
-| 1.5M | 588 | Climbing |
-| 2.0M | 659 | Clear upward trend |
-| 2.5M | 650 | Approaching ceiling |
-| 2.75M | 731 | New peak |
-| 3.0M | 723 | Plateau zone begins |
-| 3.41M | 688 | Oscillating 650–740 |
+**Checkpoint window analysis** (best reward seen in each 500k-step window):
 
-**Plateau analysis:** From ~2.5M to 3.4M (900k steps), reward oscillates between 650–740 with no net gain. Peak values of 730–740 appear to be the ceiling for this architecture (64 hidden units, `normalize: false`).
+| Checkpoint | Reward at export | Window best | Std at best | Best checkpoint? |
+| --- | --- | --- | --- | --- |
+| 1.5M | 588 | 588 | 28 | — |
+| 2.0M | 659 | 680 (step 1.86M) | 31 | — |
+| 2.5M | 650 | 717 (step 2.47M) | 20 | — |
+| 3.0M | 723 | 731 (step 2.75M) | 15 | — |
+| 3.5M | 725 | 748 (step 3.42M) | 9 | — |
+| 4.0M | 663 | 754 (step 3.9M) | 10 | — |
+| **4.5M** | **758** | **760 (step 4.41M)** | **9** | **Yes** |
+| ~5.0M | ~757 | 762 (step 4.8M) | ~16 | Marginal |
 
-**Throughput (session 2):** ~1,280 steps/s · **Wall time per million steps: ~13 min**
+**Best deployment checkpoint:** `Walker2d-v0-4499924.onnx` — highest mean reward (758) with lowest std (5.7) at export time.
+
+**Throughput (session 2):** ~1,420 steps/s · **Wall time 1M→4.5M: ~41 min**
+
+### Ceiling progression — not a plateau
+
+The ceiling kept rising across the full 5M run, disproving the earlier plateau diagnosis:
+
+| Step range | Peak reward seen |
+| --- | --- |
+| 1M–2M | 680 |
+| 2M–3M | 731 |
+| 3M–4M | 754 |
+| 4M–5M | 762 |
+
+Rate of improvement slows (~10 reward/M steps from 3M onward) but never stops.
+
+### Bimodal episode pattern
+
+From ~2.5M onward, every checkpoint window shows a clear alternation between two episode types:
+
+- **Good episodes:** reward ~740–762, std=5–17 — agent completes `time_horizon=100` steps consistently
+- **Bad episodes:** reward ~510–650, std=150–315 — mix of full completions and early falls, often triggered by initial body orientation
+
+This is the characteristic signature of a **near-stable policy**: the gait is learned, but the policy hasn't generalized its recovery to all starting conditions. The sudden deep dips (529 at 3.22M, 515 at 3.68M, 526 at 4.94M) confirm this — they are not gradual degradations but single-episode cascade failures.
 
 ### Architecture ceiling observations
 
-The 720–740 ceiling is consistent with the 64-unit, 2-layer network + `normalize: false` configuration. To break through would require:
+The 760 ceiling is likely the limit for 64-unit, `normalize: false`. The bimodal behavior would be reduced by `normalize: true`, which helps the policy handle the range of initial observation values seen during training more robustly.
 
-| Option | Requires restart? |
-| --- | --- |
-| `normalize: true` | Yes (new run_id) |
-| `hidden_units: 128` | Yes |
-| Switch to SAC | Yes |
-
-SAC typically reaches 2000–5000 on Walker2d-equivalent tasks at full convergence.
+| Option | Requires restart? | Expected effect |
+| --- | --- | --- |
+| `normalize: true` | Yes (new run_id) | Reduces bimodal dips; may push ceiling to 800–900 |
+| `hidden_units: 128` | Yes | More capacity; marginal benefit for simple locomotion |
+| Switch to SAC | Yes | 2000–5000 at convergence |
