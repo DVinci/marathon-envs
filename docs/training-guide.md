@@ -140,6 +140,34 @@ This project's Walker2d-v0 is a faithful port — those are the rough targets fo
 
 ---
 
+## Can Training for Too Long Be Harmful?
+
+Yes — in several distinct ways.
+
+### Entropy collapse → local optimum lock-in
+
+As training continues, entropy (exploration) naturally drops. Once the policy commits hard to one strategy, it stops exploring alternatives. If that strategy is a local optimum (e.g., shuffle forward with tiny steps), more training makes the policy *more* committed to the wrong behavior. No amount of additional steps escapes a collapsed local optimum.
+
+### Reward hacking gets reinforced
+
+The agent finds ways to score reward that don't match the intended behavior — a walker that leans forward and barely catches itself, or spins in place because the reward formula has a gap. Early in training this is fleeting; after 10M+ steps the policy has deeply optimized for the exploit and it is very hard to unlearn.
+
+### Policy gradient instability (rare with PPO)
+
+PPO's clipping prevents catastrophic updates, but over a very long run with too high a learning rate, the policy can drift and degrade. Reward may climb to 1500 then slowly erode back to 800. `learning_rate_schedule: linear` decays the LR toward zero over `max_steps` specifically to prevent this — it is one reason the schedule matters.
+
+### Style transfer environments are most fragile
+
+Environments using motion capture reference (Walking, Running, Dancing, etc.) have complex reward shaping. Running past the plateau can degrade style quality even while raw reward stays flat, because the policy drifts toward exploiting the reward formula rather than matching the reference pose.
+
+### The practical answer for this project
+
+With PPO + linear LR decay, "too long" usually means **wasted compute, not broken training**. A run that plateaued at 15M and continues to 20M hasn't been harmed — it just burned CPU for nothing. Active degradation is uncommon.
+
+**Rule of thumb:** if the reward curve has been flat for 20–30% of `max_steps`, stop and export. You are done.
+
+---
+
 ## Resuming vs Starting Over
 
 - `--resume` loads from `.pt` checkpoint files in `results/<run_id>/`
