@@ -85,6 +85,18 @@ RUN_ID   = "sac_walker_01"
 TOTAL_TIMESTEPS = 2_000_000
 ```
 
+### Resume SAC training
+
+Stop the script at any time (Ctrl+C). The next run resumes automatically:
+
+```bash
+python stable_baselines_sac_train.py
+```
+
+The script detects `results/<RUN_ID>/Walker2d-v0_checkpoint.zip` on startup and loads both the model weights and the replay buffer. Training continues from the saved step count; TensorBoard graphs stay continuous.
+
+The replay buffer is what makes resume meaningful for SAC — without it, the agent would have to re-explore from scratch and lose its Q-value estimates. The first checkpoint (and thus first resumable point) is saved at `SAVE_FREQ` steps (default 100k).
+
 ### Output files
 
 All saved to `results/<RUN_ID>/`:
@@ -92,11 +104,17 @@ All saved to `results/<RUN_ID>/`:
 | File | Contents |
 | --- | --- |
 | `best_model.zip` | Best policy by mean episode reward — updated in-place |
-| `<EnvName>_<step>.zip` | Periodic checkpoint every `SAVE_FREQ` steps |
+| `<EnvName>_checkpoint.zip` | Latest resumable checkpoint (model + optimizer state) |
+| `<EnvName>_checkpoint_replay_buffer.pkl` | Replay buffer paired with the checkpoint |
+| `<EnvName>_<step>.zip` | Periodic snapshot every `SAVE_FREQ` steps (model only) |
 | `<EnvName>_final.zip` | Policy state at end of training |
 | `monitor.csv` | Per-episode reward and length log |
 
 TensorBoard logs go to `summaries/<RUN_ID>/`.
+
+### Performance note
+
+SAC runs one gradient update per environment step by default, which limits throughput to ~28 steps/s on this machine (GPU-bound on the gradient, not the simulation). The script uses `train_freq=4, gradient_steps=4` — collecting 4 steps then doing 4 gradient passes — which roughly 3–4× the fps with the same total gradient updates.
 
 ### PPO vs SAC comparison
 
@@ -104,13 +122,12 @@ TensorBoard logs go to `summaries/<RUN_ID>/`.
 | --- | --- | --- |
 | Algorithm type | On-policy | Off-policy (replay buffer) |
 | Parallel envs | 200 (4 × 50) | 1 |
-| Steps/second | ~1263 | ~150 |
-| Steps to reward ~1500 | ~10M | ~500k–1M |
-| Wall time to reward ~1500 | ~130 min | ~60–110 min |
-| Final policy quality | 1500–3000 | 3000–5000 |
-| Resume support | Yes (`.pt` checkpoints) | Yes (`.zip` checkpoints) |
+| Steps/second | ~1300 | ~28–100 |
+| Steps to reward ~800 | ~4M | ~200k–500k |
+| Final policy quality | ~828 at 5M steps | 3000–5000 at convergence |
+| Resume support | Yes (`.pt` checkpoints) | Yes (`.zip` + replay buffer) |
 
-PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy. For Walker2d on this machine, SAC reaches better quality faster in wall-clock time.
+PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy. For Walker2d on this machine, SAC is expected to reach better quality faster in wall-clock time despite lower throughput.
 
 ---
 

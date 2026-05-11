@@ -51,20 +51,53 @@ env = Monitor(
     filename=os.path.join(save_dir, "monitor.csv"),
 )
 
-model = SAC(
-    "MlpPolicy",
-    env,
-    verbose=1,
-    tensorboard_log="summaries",
-    learning_rate=3e-4,
-    batch_size=256,
-    buffer_size=1_000_000,
-    learning_starts=10_000,
-    train_freq=1,
-    gradient_steps=1,
-    ent_coef="auto",
-    policy_kwargs=dict(net_arch=[256, 256]),
-)
+checkpoint_path = os.path.join(save_dir, ENV_NAME + "_checkpoint")
+replay_buffer_path = checkpoint_path + "_replay_buffer"
+
+if os.path.exists(checkpoint_path + ".zip"):
+    print(f"Resuming from {checkpoint_path}.zip")
+    model = SAC.load(checkpoint_path, env=env, tensorboard_log="summaries")
+    if os.path.exists(replay_buffer_path + ".pkl"):
+        print(f"Loading replay buffer from {replay_buffer_path}.pkl")
+        model.load_replay_buffer(replay_buffer_path)
+    remaining = TOTAL_TIMESTEPS - model.num_timesteps
+    print(f"Resuming at step {model.num_timesteps}, {remaining} steps remaining")
+else:
+    model = SAC(
+        "MlpPolicy",
+        env,
+        verbose=1,
+        tensorboard_log="summaries",
+        learning_rate=3e-4,
+        batch_size=256,
+        buffer_size=1_000_000,
+        learning_starts=10_000,
+        train_freq=4,
+        gradient_steps=4,
+        ent_coef="auto",
+        policy_kwargs=dict(net_arch=[256, 256]),
+    )
+    remaining = TOTAL_TIMESTEPS
+
+
+class CheckpointWithBufferCallback(BaseCallback):
+    """Saves model + replay buffer together at each checkpoint interval."""
+
+    def __init__(self, save_freq: int, save_path: str, verbose: int = 1):
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        self._last_save = 0
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps - self._last_save >= self.save_freq:
+            self.model.save(self.save_path)
+            self.model.save_replay_buffer(self.save_path + "_replay_buffer")
+            if self.verbose:
+                print(f"  [checkpoint] saved at step {self.num_timesteps}")
+            self._last_save = self.num_timesteps
+        return True
+
 
 callbacks = CallbackList([
     CheckpointCallback(
@@ -72,13 +105,23 @@ callbacks = CallbackList([
         save_path=save_dir,
         name_prefix=ENV_NAME,
     ),
+    CheckpointWithBufferCallback(
+        save_freq=SAVE_FREQ,
+        save_path=checkpoint_path,
+    ),
     BestModelCallback(save_path=save_dir),
 ])
 
 start = timer()
-model.learn(total_timesteps=TOTAL_TIMESTEPS, callback=callbacks, tb_log_name=RUN_ID)
+model.learn(
+    total_timesteps=remaining,
+    callback=callbacks,
+    tb_log_name=RUN_ID,
+    reset_num_timesteps=False,
+)
 elapsed = timer() - start
 print(f"Training time: {timedelta(seconds=elapsed)}")
 
 model.save(os.path.join(save_dir, ENV_NAME + "_final"))
+model.save_replay_buffer(checkpoint_path + "_replay_buffer")
 env.close()

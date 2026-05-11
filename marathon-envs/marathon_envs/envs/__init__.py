@@ -86,7 +86,7 @@ class MarathonEnvs(gym.Env):
             base_port=base_port,
             side_channels=channels,
             no_graphics=no_graphics,
-            args=args,
+            additional_args=args,
         )
         if not inference:
             engine_configuration_channel.set_configuration_parameters(
