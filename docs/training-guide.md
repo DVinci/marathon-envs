@@ -114,20 +114,48 @@ TensorBoard logs go to `summaries/<RUN_ID>/`.
 
 ### Performance note
 
-SAC runs one gradient update per environment step by default, which limits throughput to ~28 steps/s on this machine (GPU-bound on the gradient, not the simulation). The script uses `train_freq=4, gradient_steps=4` — collecting 4 steps then doing 4 gradient passes — which roughly 3–4× the fps with the same total gradient updates.
+With a single environment, SAC's bottleneck is the Unity gRPC round-trip (~20–30ms per step), not the GPU. The script uses `N_ENVS=4` (four Unity processes via `SubprocVecEnv`) and `train_freq=4, gradient_steps=4`. This gives ~700 fps before gradient updates start, settling to ~200–400 fps once training is running — roughly 10–15× faster than a single-env run.
+
+The mlagents conda environment includes CUDA-enabled PyTorch; SB3 SAC automatically uses `device=cuda`.
+
+### Reading the training output
+
+Each stats block has two sections:
+
+**rollout/** — environment statistics:
+
+| Field | Meaning |
+| --- | --- |
+| `ep_len_mean` | Average episode length in steps. Grows as the agent learns to stay upright. |
+| `ep_rew_mean` | Average total reward per episode. The main metric to watch. |
+| `episodes` | Total episodes completed across all envs since start. |
+| `fps` | Environment steps per second. Drops when gradient updates start. |
+| `time_elapsed` | Seconds since training started. |
+| `total_timesteps` | Total steps collected across all envs. |
+
+**train/** — neural network statistics:
+
+| Field | Meaning |
+| --- | --- |
+| `actor_loss` | Policy network loss. Negative is normal — actor finds actions the critic scores highly. |
+| `critic_loss` | Q-value prediction error. Should decrease over time. |
+| `ent_coef` | Entropy coefficient — controls exploration. Auto-tuned from ~1.0 down to ~0.001. High = exploring, low = exploiting. |
+| `ent_coef_loss` | Signal driving `ent_coef` adjustment. Negative = policy is less random than target entropy. |
+| `learning_rate` | Fixed at 3e-4 (no decay schedule, unlike PPO). |
+| `n_updates` | Gradient steps taken so far. |
 
 ### PPO vs SAC comparison
 
 | | PPO (ML-Agents) | SAC (Stable Baselines 3) |
 | --- | --- | --- |
 | Algorithm type | On-policy | Off-policy (replay buffer) |
-| Parallel envs | 200 (4 × 50) | 1 |
-| Steps/second | ~1300 | ~28–100 |
-| Steps to reward ~800 | ~4M | ~200k–500k |
-| Final policy quality | ~828 at 5M steps | 3000–5000 at convergence |
+| Parallel envs | 200 (4 × 50) | 4 (1 per process) |
+| Steps/second | ~1300 | ~200–700 |
+| Steps to reward ~800 | ~4M | ~100k–200k |
+| Final policy quality | ~828 at 5M steps | expected 1500–3000+ at 1M steps |
 | Resume support | Yes (`.pt` checkpoints) | Yes (`.zip` + replay buffer) |
 
-PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy. For Walker2d on this machine, SAC is expected to reach better quality faster in wall-clock time despite lower throughput.
+PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy and runs on GPU for gradient computation.
 
 ---
 
