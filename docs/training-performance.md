@@ -379,7 +379,7 @@ The 760 ceiling is the confirmed limit for 64-unit, `normalize: false`. The bimo
 | --- | --- | --- |
 | `normalize: true` | Yes (new run_id) | Eliminated bimodal dips; pushed ceiling from 762 → 828 |
 | `hidden_units: 128` | Yes | More capacity; marginal benefit for simple locomotion |
-| Switch to SAC | Yes | 2000–5000 at convergence |
+| Switch to SAC | Yes | Tested — peaked at 646–686, below PPO (see SAC Runs below) |
 
 ---
 
@@ -559,9 +559,10 @@ Interrupted by OS shutdown. No replay buffer saved (resume feature added after t
 
 **Current best deployable model:** PPO walker_04 `best_model.onnx` (reward 828).
 
-**SAC conclusions for this machine:**
+**SAC conclusions for Marathon Envs Walker2d:**
 
-- SB3 SAC with multiple envs hurts convergence — designed for single env
-- ML-Agents SAC with 200 envs also struggles — `buffer_size=50000` too small for that scale
-- SAC's theoretical advantage (3000–5000) requires single-env, long training runs (~10M+ steps)
-- On this machine, PPO is faster and produces better deployable models within practical time budgets
+- PPO outperforms SAC on every axis tested — higher reward, faster wall time, native .onnx export
+- SAC's published benchmark numbers (2000–5000) are for MuJoCo Walker2d-v2, a different physics engine with different reward shaping — they do not transfer to Marathon Envs
+- SB3 SAC multi-env degrades sample efficiency (replay buffer loses i.i.d. property)
+- ML-Agents SAC `buffer_size=50000` is too small for 200 agents — experience is evicted before it can be reused
+- **PPO is the recommended algorithm for this environment and hardware**
