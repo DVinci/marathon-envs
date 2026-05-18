@@ -9,9 +9,32 @@
 | Replay buffer | No | Yes — reuses old experiences |
 | Exploration | Entropy bonus | Automatic entropy tuning |
 | Stability | Very stable | Stable but more hyperparams |
-| Best for | Many parallel envs | Fewer envs, longer training |
+| Best for | Many parallel envs, game/sim | Single env, slow simulation |
 
-SAC typically reaches the same locomotion quality as PPO in 3× fewer steps. This repo supports both — PPO via `mlagents-learn`, SAC via `stable_baselines_sac_train.py`.
+**Observed results on Marathon Envs Walker2d (this machine):**
+
+| Algorithm | Setup | Steps | Wall time | Best reward |
+| --- | --- | --- | --- | --- |
+| PPO | 200 envs, normalize: true | 5M | 64 min | **828** |
+| SB3 SAC | 4 envs | 1M | 3h | 655 |
+| ML-Agents SAC | 200 envs | 1M | 3.3h | 646 |
+
+**PPO is the recommended algorithm for this project.** SAC's published benchmark scores (2000–5000 on Walker2d) come from MuJoCo Walker2d-v2 — a different physics engine with different reward shaping. They do not transfer to Marathon Envs.
+
+### Why Unity ML-Agents chose PPO as default
+
+The ML-Agents team explicitly states PPO was chosen for being *"more general purpose and stable than many other RL algorithms."* Three reasons explain why PPO outperforms SAC in game/simulation environments:
+
+**1. On-policy stability with parallel agents**
+PPO uses freshly collected data each update, so it always trains on the current policy's behavior. SAC's replay buffer accumulates transitions from past policies — when 200 parallel agents are all improving simultaneously, the buffer fills with stale, increasingly unrepresentative data. This is why `buffer_size=50000` with 200 agents is almost useless: the buffer fills in ~250 steps and the oldest experience is immediately evicted.
+
+**2. Non-stationarity in multi-agent and self-play scenarios**
+Unity explicitly recommends PPO over SAC for self-play: *"the non-stationary dynamics caused by a changing opponent can cause significant issues in the experience replay mechanism used by SAC."* In any setting where the environment's dynamics change because other agents' policies change, SAC's off-policy assumptions break down.
+
+**3. SAC's sample efficiency advantage requires specific conditions**
+SAC's edge only materializes in slow, heavy simulations (>0.1s per step) with a single environment — exactly the opposite of the parallel, fast-physics setup that marathon-envs uses. With PhysX running at 20× time scale across 200 agents, PPO generates data faster than SAC can meaningfully reuse it.
+
+**Bottom line:** PPO is not the default because it's the best algorithm in theory — it's the best choice for the specific combination of fast physics simulation + many parallel environments that defines the Marathon Envs training setup. This repo supports both — PPO via `mlagents-learn`, SAC via `stable_baselines_sac_train.py`.
 
 ---
 
