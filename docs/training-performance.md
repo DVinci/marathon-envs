@@ -453,3 +453,115 @@ At 5M steps the final entropy was **0.52** (vs initial 1.43), and mean episode l
 | `normalize` | false | **true** |
 
 Already set in `config/marathon_envs_config.yaml`.
+
+---
+
+## SAC Runs — Walker2d-v0
+
+### Run: sac_walker_01 — SB3 SAC, 1 env (interrupted at 1.2M steps)
+
+**Script:** `stable_baselines_sac_train.py` (single env, train_freq=1)
+
+| Parameter | Value |
+| --- | --- |
+| Environments | 1 |
+| `train_freq` | 1 |
+| `gradient_steps` | 1 |
+| `buffer_size` | 1,000,000 |
+| `net_arch` | [256, 256] |
+| Interrupted at step | 1,200,000 |
+| Wall time | ~12.5 hours |
+| **Throughput** | **~26 steps/s** |
+| Reward at interrupt | ~686 (still climbing) |
+
+Interrupted by OS shutdown. No replay buffer saved (resume feature added after this run). Best model: `results/sac_walker_01/best_model.zip` (~686 reward).
+
+**Root cause of slow throughput:** CPU-only PyTorch installed in the wrong Python environment (`C:\Python\3.10` instead of the mlagents conda env). The mlagents conda env has CUDA-enabled PyTorch 2.3.0. Additionally, `train_freq=1` does one gradient update per env step, making every step GPU-bound.
+
+---
+
+### Run: sac_walker_02 — SB3 SAC, 4 envs (SubprocVecEnv)
+
+**Script:** `stable_baselines_sac_train.py` (4 envs via SubprocVecEnv, train_freq=4)
+
+| Parameter | Value |
+| --- | --- |
+| Environments | 4 (SubprocVecEnv) |
+| `train_freq` | 4 |
+| `gradient_steps` | 4 |
+| `buffer_size` | 1,000,000 |
+| `net_arch` | [256, 256] |
+| Total steps | 1,000,000 |
+| Wall time | ~3 hours |
+| **Throughput** | **~90–100 steps/s** |
+| Best reward | **~505** |
+| Final reward | **655** |
+
+| Step range | Peak reward | Std |
+| --- | --- | --- |
+| 0–100k | 46 | 27 |
+| 100k–260k | 250–318 | 90–144 |
+| 260k–500k | 530 | 47 |
+| 500k–1M | **655** (plateau) | 20–210 |
+
+**Result: underperformed PPO walker_04 (828).** Reward plateaued at ~655 from 500k steps onward. Multi-env SAC likely hurts convergence — the replay buffer mixes experience from 4 different policy states simultaneously, destabilizing Q-learning. Entropy collapsed early (0.007 at 260k steps), locking in a suboptimal policy.
+
+---
+
+### Run: walker_sac_01 — ML-Agents SAC, 4×50 envs
+
+**Script:** `train_ppo.py` with `config/walker2d_sac_config.yaml`
+
+| Parameter | Value |
+| --- | --- |
+| `trainer_type` | sac |
+| Environments | 4 × 50 = 200 |
+| `steps_per_update` | 20 (changed from 1 after first 23k steps) |
+| `buffer_size` | 50,000 |
+| `hidden_units` | 256 |
+| `normalize` | true |
+| Total steps | 1,000,000 |
+| Wall time | ~3.3 hours |
+| **Throughput** | **~75 steps/s** |
+| Best reward | **646.4** (step 790k) |
+| Final reward | 631.6 |
+| Best model | `results/walker_sac_01/Walker2d-v0/best_model.onnx` |
+
+**Reward progression:**
+
+| Steps | Mean Reward | Std | Notes |
+| --- | --- | --- | --- |
+| 100k | 46 | 27 | early learning |
+| 220k | 250 | 85 | big jump |
+| 400k | 530 | 47 | steep climb |
+| 500k | 562 | 39 | first checkpoint exported |
+| 600k | 591 | 12 | stabilizing |
+| 790k | **646** | 0 | peak |
+| 830k–1M | 370–645 | 200–280 | bimodal instability |
+
+**Result: below PPO walker_04 (828).** Policy peaked at 646 then entered severe bimodal instability — std reaching 200–280 in the final 200k steps, with reward oscillating between 370 and 646. `buffer_size=50000` is likely too small (old experience evicted quickly) and `steps_per_update=20` with 200 agents may be too infrequent for stable Q-function learning.
+
+**Positive:** ML-Agents SAC exports `.onnx` natively — `best_model.onnx` is directly deployable in Unity.
+
+---
+
+## Full Algorithm Comparison — Walker2d-v0
+
+| Run | Algorithm | Steps | Wall time | Best reward | Deployable to Unity |
+| --- | --- | --- | --- | --- | --- |
+| walker_03 | PPO (normalize: false) | 5M | ~54 min | 758 | Yes (.onnx) |
+| walker_04 | PPO (normalize: true) | 5M | ~64 min | **828** | Yes (.onnx) |
+| sac_walker_01 | SB3 SAC (1 env) | 1.2M† | ~12.5h | ~686† | No (.zip only) |
+| sac_walker_02 | SB3 SAC (4 envs) | 1M | ~3h | 655 | No (.zip only) |
+| walker_sac_01 | ML-Agents SAC (4×50) | 1M | ~3.3h | 646 | **Yes (.onnx)** |
+
+†Interrupted, still climbing.
+
+**Current best deployable model:** PPO walker_04 `best_model.onnx` (reward 828).
+
+**SAC conclusions for this machine:**
+
+- SB3 SAC with multiple envs hurts convergence — designed for single env
+- ML-Agents SAC with 200 envs also struggles — `buffer_size=50000` too small for that scale
+- SAC's theoretical advantage (3000–5000) requires single-env, long training runs (~10M+ steps)
+- On this machine, PPO is faster and produces better deployable models within practical time budgets
