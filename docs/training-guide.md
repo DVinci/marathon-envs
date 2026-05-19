@@ -9,7 +9,7 @@ Use `train_ppo.py` instead of `mlagents-learn` directly — it passes all argume
 ```bash
 python train_ppo.py config/marathon_envs_config.yaml --run-id=<run_name> \
   --no-graphics --env="builds/<env>/Marathon Environments.exe" \
-  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
+  --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
 ```
 
 ### Resume training
@@ -17,7 +17,7 @@ python train_ppo.py config/marathon_envs_config.yaml --run-id=<run_name> \
 ```bash
 python train_ppo.py config/marathon_envs_config.yaml --run-id=<run_name> --resume \
   --no-graphics --env="builds/<env>/Marathon Environments.exe" \
-  --num-envs=4 --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
+  --env-args --spawn-env=<EnvName-v0> --num-spawn-envs=50
 ```
 
 ### Editor training (no build needed)
@@ -33,8 +33,8 @@ Press **Ctrl+P** again to stop. (`train_ppo.py` also works here.)
 
 | Flag | Meaning |
 | --- | --- |
-| `--num-envs` | Number of Unity processes — one per CPU core |
-| `--num-spawn-envs` | Environments per process — sweet spot is 50 on i7-3770S |
+| `--num-envs` | Separate Unity OS processes. Use 1 for reliability across all envs; higher values only help if the environment is proven stable at that scale. |
+| `--num-spawn-envs` | Environments spawned inside each process (EnvSpawner). Sweet spot is 50 on i7-3770S. This is the primary CPU utilisation lever. |
 | `--no-graphics` | Headless mode; required for multi-process runs |
 | `--resume` | Resume from `.pt` checkpoints in `results/<run_id>/` |
 
@@ -187,9 +187,12 @@ This is already set in `config/marathon_envs_config.yaml`.
 
 **50 envs/process is the confirmed sweet spot** for a 4-core CPU. Beyond that, per-core PhysX overhead exceeds the benefit of more data.
 
+> **Note:** the 4-process rows above were benchmarked on Walker2d-v0 only. Complex environments (Ant, MarathonMan, Terrain) can exceed ML-Agents' 60-second init timeout at 4 × 50 = 200 simultaneous instances. Use `--num-envs=1 --num-spawn-envs=50` for safe batch training across all environments.
+
 ### To go faster
 
-- More CPU cores → increase `--num-envs` (one process per core)
+- More spawn envs → increase `--num-spawn-envs` (primary lever; 50 is the sweet spot on i7-3770S)
+- More CPU cores → increase `--num-envs` only after confirming the environment initialises reliably at that scale (complex envs like Ant hit ML-Agents' 60s init timeout at 4 × 50 = 200 simultaneous instances)
 - GPU-accelerated physics (Isaac Lab) → thousands of envs on GPU
 - Switch to SAC → fewer total steps needed for same or better quality
 
@@ -227,6 +230,73 @@ Source: [UnitySDK/Assets/Editor/BatchBuild.cs](../UnitySDK/Assets/Editor/BatchBu
 
 ---
 
+## Parallelism Calibration
+
+Before running full batch training, run the calibration script to find the optimal `--num-envs` and `--num-spawn-envs` for each environment on your specific hardware. Results are saved to `config/optimal_spawn_envs.json` and picked up automatically by `train_all_envs.py`.
+
+### How to run
+
+```bash
+# Calibrate all 16 environments (~45-75 minutes)
+python calibrate_envs.py
+
+# Calibrate a single environment first to verify it works
+python calibrate_envs.py --envs Walker2d-v0
+```
+
+### What it tests
+
+Grid search over `num_envs ∈ [1, 2, 4]` × `num_spawn_envs ∈ [4, 10, 25, 50, 100, 200]`. Each trial runs 10k steps; throughput is measured from the 5k→10k interval to exclude initialisation overhead. The spawn loop stops when improvement drops below 5% (plateau) or the run times out.
+
+### Calibration output
+
+```text
+========================================================================
+CALIBRATION RESULTS
+========================================================================
+  Environment                      num_envs   spawn    steps/s
+  ------------------------------------------------------------------------
+  Hopper-v0                               4      50      574.4
+  Walker2d-v0                             4      50      592.6
+  Ant-v0                                  1       1        0.0  (broken — see Known Issues)
+  MarathonMan-v0                          4      25      466.2
+  MarathonManSparse-v0                    4     100      477.5
+  TerrainHopper-v0                        4      50      589.0
+  TerrainWalker2d-v0                      2      25      517.2
+  TerrainAnt-v0                           4      50     1050.2  (anomalous — likely artifact)
+  TerrainMarathonMan-v0                   4     200      498.9
+  MarathonManWalking-v0                   4      25      623.8
+  MarathonManRunning-v0                   2      50     2564.1  (anomalous — likely artifact)
+  MarathonManJazzDancing-v0               1     200     6906.1  (anomalous — likely artifact)
+  MarathonManMMAKick-v0                   2      50      575.4
+  MarathonManPunchingBag-v0               4      10      355.2
+  MarathonManBackflip-v0                  4     200     6684.5  (anomalous — likely artifact)
+  ControllerMarathonMan-v0                4      25      367.0
+========================================================================
+  Results saved to config/optimal_spawn_envs.json
+  Run full training:  python train_all_envs.py
+========================================================================
+```
+
+> **Anomalous readings:** Several environments show implausibly high steps/s values (2564–6906). These are measurement artifacts: when many environments reset simultaneously near the 5k→10k summary boundary, the step counter jumps ahead, compressing the time interval and inflating the rate. The **selected config** (num_envs × spawn) is still valid — it was simply the point at which this artifact produced the highest reading. Re-calibrate those environments if you want reliable throughput figures. **Ant-v0 zero throughput:** See Known Issues below.
+
+### Calibration flags
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--envs ENV …` | all 16 | Calibrate only these environments |
+| `--num-envs-levels N …` | `1 2 4` | num_envs values to test |
+| `--spawn-levels S …` | `4 10 25 50 100 200` | num_spawn_envs values to test |
+| `--run-prefix PREFIX` | `calib_YYYYMMDD` | Prefix for calibration run IDs |
+
+Delete calibration artifacts when no longer needed:
+
+```powershell
+Remove-Item -Recurse results\calib_* summaries\calib_*
+```
+
+---
+
 ## Batch Training — All Environments
 
 `train_all_envs.py` trains every pre-built environment in sequence. Each environment gets its own `mlagents-learn` run with a dated run-ID, and best-model tracking (same as `train_ppo.py`) is applied automatically.
@@ -237,8 +307,8 @@ Source: [UnitySDK/Assets/Editor/BatchBuild.cs](../UnitySDK/Assets/Editor/BatchBu
 # Train all 16 environments with defaults (headless, 1 Unity process, 1 env per process)
 python train_all_envs.py
 
-# Recommended: 4 parallel instances per build (good for 4-core CPU)
-python train_all_envs.py --num-spawn-envs 4
+# Recommended: 50 spawn envs per process — uses all 4 cores via Unity's physics job system
+python train_all_envs.py --num-spawn-envs 50
 
 # Train only a subset
 python train_all_envs.py --envs Hopper-v0 Walker2d-v0 Ant-v0
@@ -251,14 +321,14 @@ python train_all_envs.py --resume
 
 Each environment gets the run-ID `<prefix>-<envId>`. The prefix defaults to today's date (`YYYYMMDD`), e.g. `20260519-Walker2d-v0`. Summaries and checkpoints land in the usual `summaries/` and `results/` folders.
 
-### Flags
+### Batch training flags
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--run-prefix PREFIX` | today's date | Prefix for all run-IDs in this batch |
 | `--envs ENV …` | all 16 | Train only the listed environments |
-| `--num-envs N` | 1 | Parallel Unity processes per build |
-| `--num-spawn-envs N` | 1 | Parallel env instances inside each process |
+| `--num-envs N` | per-env optimal or 1 | Parallel Unity processes per build |
+| `--num-spawn-envs N` | per-env optimal or 50 | Parallel env instances inside each process |
 | `--resume` | off | Pass `--resume` to mlagents-learn (continue existing runs) |
 | `--graphics` | off | Enable graphics (headless by default) |
 
@@ -266,7 +336,7 @@ Each environment gets the run-ID `<prefix>-<envId>`. The prefix defaults to toda
 
 `train_all_envs.py` skips any environment whose build folder doesn't exist yet — it will print `[SKIP] <envId> — build not found`. Run **Marathon Envs → Build All Environments (Windows)** in the Unity Editor first to generate all builds.
 
-### Output
+### Batch training output
 
 At the end of the batch, a summary is printed:
 
@@ -431,7 +501,7 @@ This also limits data loss on interrupt to at most one `summary_freq` interval, 
 
 ## Hyperparameter Configuration
 
-All hyperparameters live in `config/marathon_envs_config.yaml`, one block per behavior name (e.g. `Walker2d-v0`). There are no global defaults — each environment declares all its values explicitly.
+All hyperparameters live in `config/marathon_envs_config.yaml`, one block per behavior name (e.g. `Walker2d-v0`). A `default_settings` block at the top provides fallback values for any behavior name not explicitly listed — this matters for the style-transfer environments (see Known Issues).
 
 ### Parameter reference
 
@@ -483,6 +553,24 @@ Larger networks do not automatically produce better policies for the same task. 
 - Long-horizon memory (larger LSTM hidden state)
 
 **Rule of thumb:** start at 64 units / 2 layers. Only scale up if the reward curve plateaus well below the expected ceiling. The bottleneck in this project is almost always sample count (physics throughput), not model capacity.
+
+---
+
+## Known Issues
+
+### Ant-v0: Behavior Type misconfiguration
+
+`Ant-v0` always times out during training (0 steps/s). The root cause is that `Behavior Type` in the Unity prefab is not set to `Default`, so the agent never registers a brain with ML-Agents and the trainer waits until timeout. This is a build-level issue — it cannot be fixed in Python or YAML. To fix it, open the `Ant-v0` scene in the Unity Editor, set the agent's **Behavior Parameters → Behavior Type** to `Default`, and rebuild via **Marathon Envs → Build Single Environment (Windows)**.
+
+The entry in `config/optimal_spawn_envs.json` records `num_envs: 1, num_spawn_envs: 1, steps_per_sec: 0.0` as a placeholder. `train_all_envs.py` will attempt the run and report it as failed until the build is fixed.
+
+### Style-transfer environments: "My Behavior" behavior name
+
+All style-transfer environments (MarathonManWalking/Running/JazzDancing/MMAKick/PunchingBag/Backflip-v0 and ControllerMarathonMan-v0) have their `BehaviorParameters.BehaviorName` set to `"My Behavior"` — the Unity ML-Agents default — instead of the environment-specific name. ML-Agents requires the behavior name to match a key in the YAML config or a `default_settings` block must exist.
+
+**Fix already applied:** both `config/marathon_envs_config.yaml` and `config/marathon_envs_calibration_config.yaml` now include a `default_settings` block that serves as the fallback trainer config for `"My Behavior"`. No code changes are needed; training and calibration both work correctly.
+
+To permanently fix the naming, open each style-transfer scene in the Unity Editor, change **Behavior Parameters → Behavior Name** to match the environment ID (e.g. `MarathonManWalking-v0`), and rebuild.
 
 ---
 

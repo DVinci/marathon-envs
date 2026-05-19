@@ -15,6 +15,7 @@ Usage:
 
 import argparse
 import datetime
+import json
 import re
 import shutil
 import subprocess
@@ -40,15 +41,19 @@ ENVS = [
     "ControllerMarathonMan-v0",
 ]
 
-CONFIG = "config/marathon_envs_config.yaml"
-BUILDS_DIR = Path("builds")
-EXE_NAME = "Marathon Environments.exe"
+CONFIG       = "config/marathon_envs_config.yaml"
+BUILDS_DIR   = Path("builds")
+EXE_NAME     = "Marathon Environments.exe"
+OPTIMAL_FILE = Path("config/optimal_spawn_envs.json")
 
 _REWARD_RE = re.compile(r"Mean Reward:\s+([-\d]+(?:\.\d+)?)")
 _EXPORT_RE = re.compile(r"Exported\s+(.+\.onnx)")
 
 
-def _train_one(env_id: str, run_id: str, args: argparse.Namespace) -> bool | None:
+def _train_one(
+    env_id: str, run_id: str, args: argparse.Namespace,
+    num_envs: int, num_spawn_envs: int,
+) -> bool | None:
     exe = BUILDS_DIR / env_id / EXE_NAME
     if not exe.exists():
         print(f"[SKIP] {env_id} — build not found: {exe}")
@@ -63,12 +68,11 @@ def _train_one(env_id: str, run_id: str, args: argparse.Namespace) -> bool | Non
         pass  # omit --no-graphics
     else:
         cmd.append("--no-graphics")
-    if args.num_envs > 1:
-        cmd.append(f"--num-envs={args.num_envs}")
+    if num_envs > 1:
+        cmd.append(f"--num-envs={num_envs}")
     if args.resume:
         cmd.append("--resume")
-    if args.num_spawn_envs > 1:
-        cmd += ["--env-args", f"--num-spawn-envs={args.num_spawn_envs}"]
+    cmd += ["--env-args", f"--spawn-env={env_id}", f"--num-spawn-envs={num_spawn_envs}"]
 
     divider = "=" * 64
     print(f"\n{divider}")
@@ -133,17 +137,18 @@ def main() -> int:
     parser.add_argument(
         "--num-envs",
         type=int,
-        default=1,
+        default=None,
         metavar="N",
-        help="Parallel Unity processes per environment (mlagents-learn --num-envs). Default: 1.",
+        help="Parallel Unity processes per environment. "
+             "Overrides per-env value from config/optimal_spawn_envs.json. Default: per-env optimal or 1.",
     )
     parser.add_argument(
         "--num-spawn-envs",
         type=int,
-        default=1,
+        default=None,
         metavar="N",
-        help="Parallel environment instances inside each Unity process "
-             "(--env-args --num-spawn-envs). Default: 1.",
+        help="Parallel environment instances inside each Unity process. "
+             "Overrides per-env value from config/optimal_spawn_envs.json. Default: per-env optimal or 50.",
     )
     parser.add_argument(
         "--resume",
@@ -173,13 +178,22 @@ def main() -> int:
     if unknown:
         parser.error(f"Unknown environment IDs: {', '.join(unknown)}")
 
+    # Load per-environment optimal params if no CLI override
+    optimal: dict = {}
+    if OPTIMAL_FILE.exists() and args.num_envs is None and args.num_spawn_envs is None:
+        optimal = json.loads(OPTIMAL_FILE.read_text())
+        print(f"Loaded per-environment optimal params from {OPTIMAL_FILE}")
+
     prefix_file.write_text(prefix)
     print(f"Run prefix: {prefix}  (saved to {prefix_file})")
     print(f"To resume this batch:  python train_all_envs.py --resume\n")
 
     results: dict[str, bool | None] = {}
     for env_id in envs:
-        results[env_id] = _train_one(env_id, f"{prefix}-{env_id}", args)
+        entry = optimal.get(env_id, {})
+        num_envs     = args.num_envs       if args.num_envs       is not None else entry.get("num_envs", 1)
+        num_spawn    = args.num_spawn_envs if args.num_spawn_envs is not None else entry.get("num_spawn_envs", 50)
+        results[env_id] = _train_one(env_id, f"{prefix}-{env_id}", args, num_envs, num_spawn)
 
     divider = "=" * 64
     done    = [e for e, r in results.items() if r is True]

@@ -1,0 +1,82 @@
+{
+  "Hopper-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 574.4
+  },
+  "Walker2d-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 592.6
+  },
+  "Ant-v0": {
+    "num_envs": 1,
+    "num_spawn_envs": 1,
+    "steps_per_sec": 0.0
+  },
+  "MarathonMan-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 25,
+    "steps_per_sec": 466.2
+  },
+  "MarathonManSparse-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 100,
+    "steps_per_sec": 477.5
+  },
+  "TerrainHopper-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 589.0
+  },
+  "TerrainWalker2d-v0": {
+    "num_envs": 2,
+    "num_spawn_envs": 25,
+    "steps_per_sec": 517.2
+  },
+  "TerrainAnt-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 1050.2
+  },
+  "TerrainMarathonMan-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 200,
+    "steps_per_sec": 498.9
+  },
+  "MarathonManWalking-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 25,
+    "steps_per_sec": 623.8
+  },
+  "MarathonManRunning-v0": {
+    "num_envs": 2,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 2564.1
+  },
+  "MarathonManJazzDancing-v0": {
+    "num_envs": 1,
+    "num_spawn_envs": 200,
+    "steps_per_sec": 6906.1
+  },
+  "MarathonManMMAKick-v0": {
+    "num_envs": 2,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 575.4
+  },
+  "MarathonManPunchingBag-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 10,
+    "steps_per_sec": 355.2
+  },
+  "MarathonManBackflip-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 200,
+    "steps_per_sec": 6684.5
+  },
+  "ControllerMarathonMan-v0": {
+    "num_envs": 4,
+    "num_spawn_envs": 25,
+    "steps_per_sec": 367.0
+  }
+}
