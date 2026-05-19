@@ -196,6 +196,7 @@ This is already set in `config/marathon_envs_config.yaml`.
 ---
 
 ## CPU vs GPU Detection
+
 ```bash
 python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU only')"
 ```
@@ -242,8 +243,9 @@ python train_all_envs.py --num-spawn-envs 4
 # Train only a subset
 python train_all_envs.py --envs Hopper-v0 Walker2d-v0 Ant-v0
 
-# Resume a batch that was interrupted (uses the same dated prefix)
-python train_all_envs.py --run-prefix 20260519 --resume
+# Resume a batch that was interrupted
+# The prefix is printed at startup and saved to train_all_envs.last_prefix
+python train_all_envs.py --run-prefix $(cat train_all_envs.last_prefix) --resume
 ```
 
 ### Run IDs
@@ -427,7 +429,7 @@ All hyperparameters live in `config/marathon_envs_config.yaml`, one block per be
 ### Parameter reference
 
 | Parameter | What it controls |
-|---|---|
+| --- | --- |
 | `batch_size` | Samples per gradient update — larger = more stable, slower |
 | `buffer_size` | Experiences collected before any update — should be >> `batch_size` |
 | `learning_rate` | Step size — start at `3e-4`; lower to `1e-4` for style transfer |

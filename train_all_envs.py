@@ -164,6 +164,11 @@ def main() -> int:
     if unknown:
         parser.error(f"Unknown environment IDs: {', '.join(unknown)}")
 
+    prefix_file = Path("train_all_envs.last_prefix")
+    prefix_file.write_text(prefix)
+    print(f"Run prefix: {prefix}  (saved to {prefix_file})")
+    print(f"To resume this batch:  python train_all_envs.py --run-prefix {prefix} --resume\n")
+
     results: dict[str, bool | None] = {}
     for env_id in envs:
         results[env_id] = _train_one(env_id, f"{prefix}-{env_id}", args)
