@@ -28,6 +28,8 @@ behaviors:
     max_steps: 1000000
     time_horizon: 100
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   Walker2d-v0:
     trainer_type: ppo
@@ -52,6 +54,8 @@ behaviors:
     max_steps: 5000000
     time_horizon: 100
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   Ant-v0:
     trainer_type: ppo
@@ -76,6 +80,8 @@ behaviors:
     max_steps: 1000000
     time_horizon: 100
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonMan-v0:
     trainer_type: ppo
@@ -100,6 +106,8 @@ behaviors:
     max_steps: 10000000
     time_horizon: 100
     summary_freq: 25000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManSparse-v0:
     trainer_type: ppo
@@ -124,6 +132,8 @@ behaviors:
     max_steps: 10000000
     time_horizon: 1000
     summary_freq: 25000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManWalking-v0:
     trainer_type: ppo
@@ -148,6 +158,8 @@ behaviors:
     max_steps: 64000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManRunning-v0:
     trainer_type: ppo
@@ -172,6 +184,8 @@ behaviors:
     max_steps: 64000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManJazzDancing-v0:
     trainer_type: ppo
@@ -196,6 +210,8 @@ behaviors:
     max_steps: 64000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManMMAKick-v0:
     trainer_type: ppo
@@ -220,6 +236,8 @@ behaviors:
     max_steps: 64000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManPunchingBag-v0:
     trainer_type: ppo
@@ -244,6 +262,8 @@ behaviors:
     max_steps: 64000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   MarathonManBackflip-v0:
     trainer_type: ppo
@@ -268,6 +288,8 @@ behaviors:
     max_steps: 128000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   TerrainHopper-v0:
     trainer_type: ppo
@@ -292,6 +314,8 @@ behaviors:
     max_steps: 50000000
     time_horizon: 1000
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   TerrainWalker2d-v0:
     trainer_type: ppo
@@ -316,6 +340,8 @@ behaviors:
     max_steps: 50000000
     time_horizon: 1000
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   TerrainAnt-v0:
     trainer_type: ppo
@@ -340,6 +366,8 @@ behaviors:
     max_steps: 50000000
     time_horizon: 1000
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   TerrainMarathonMan-v0:
     trainer_type: ppo
@@ -364,6 +392,8 @@ behaviors:
     max_steps: 50000000
     time_horizon: 1000
     summary_freq: 10000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
 
   ControllerMarathonMan-v0:
     trainer_type: ppo
@@ -388,3 +418,5 @@ behaviors:
     max_steps: 128000000
     time_horizon: 100
     summary_freq: 100000
+    checkpoint_interval: 100000
+    keep_checkpoints: 10
