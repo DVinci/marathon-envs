@@ -408,7 +408,15 @@ ML-Agents checkpoints are tiny because the network is small (64 units × 2 layer
 | `.pt` (resume checkpoint) | ~189 KB |
 | `.onnx` (inference model) | ~34 KB |
 
-The config uses `checkpoint_interval: 100000` and `keep_checkpoints: 10` for all environments — a checkpoint every 100k steps, last 10 kept (~1.9 MB on disk). This limits data loss on interrupt to at most 100k steps, making overnight stop/resume reliable.
+The config sets `checkpoint_interval = summary_freq` for every environment so that every reward logging point is also a checkpoint export. `best_model.onnx` is then updated whenever reward improves at any of those points — effectively best-step tracking rather than best-checkpoint-boundary tracking. `keep_checkpoints: 10` keeps the last 10 `.pt` files (~1.9 MB total).
+
+| Group | `summary_freq` | `checkpoint_interval` |
+| --- | --- | --- |
+| Classical (Hopper, Walker, Ant), Terrain | 10,000 | 10,000 |
+| MarathonMan-v0, MarathonManSparse-v0 | 25,000 | 25,000 |
+| Style transfer, ControllerMarathonMan | 100,000 | 100,000 |
+
+This also limits data loss on interrupt to at most one `summary_freq` interval, making overnight stop/resume reliable.
 
 ---
 
