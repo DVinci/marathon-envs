@@ -157,17 +157,25 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    prefix = args.run_prefix or datetime.date.today().strftime("%Y%m%d")
+    prefix_file = Path("train_all_envs.last_prefix")
+
+    if args.run_prefix:
+        prefix = args.run_prefix
+    elif args.resume and prefix_file.exists():
+        prefix = prefix_file.read_text().strip()
+        print(f"Resuming batch with prefix: {prefix}  (from {prefix_file})")
+    else:
+        prefix = datetime.date.today().strftime("%Y%m%d")
+
     envs = args.envs or ENVS
 
     unknown = [e for e in envs if e not in ENVS]
     if unknown:
         parser.error(f"Unknown environment IDs: {', '.join(unknown)}")
 
-    prefix_file = Path("train_all_envs.last_prefix")
     prefix_file.write_text(prefix)
     print(f"Run prefix: {prefix}  (saved to {prefix_file})")
-    print(f"To resume this batch:  python train_all_envs.py --run-prefix {prefix} --resume\n")
+    print(f"To resume this batch:  python train_all_envs.py --resume\n")
 
     results: dict[str, bool | None] = {}
     for env_id in envs:

@@ -243,9 +243,8 @@ python train_all_envs.py --num-spawn-envs 4
 # Train only a subset
 python train_all_envs.py --envs Hopper-v0 Walker2d-v0 Ant-v0
 
-# Resume a batch that was interrupted
-# The prefix is printed at startup and saved to train_all_envs.last_prefix
-python train_all_envs.py --run-prefix $(cat train_all_envs.last_prefix) --resume
+# Resume a batch that was interrupted (prefix is read from train_all_envs.last_prefix automatically)
+python train_all_envs.py --resume
 ```
 
 ### Run IDs
