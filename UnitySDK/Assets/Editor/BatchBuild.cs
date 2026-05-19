@@ -8,7 +8,8 @@ using UnityEngine;
 /// Builds one executable per environment, each with envIdDefault pre-set so
 /// training scripts can launch without passing --spawn-env.
 ///
-/// Menu: Marathon Envs → Build All Environments (Windows)
+/// Menu: Marathon Envs → Build All Environments → Headless (Training)
+///       Marathon Envs → Build All Environments → With Graphics (Visualization)
 ///       Marathon Envs → Build Single Environment (Windows)
 /// Output: <repo-root>/builds/<envId>/Marathon Environments.exe
 /// </summary>
@@ -47,29 +48,45 @@ public static class BatchBuild
     // Menu items
     // -------------------------------------------------------------------------
 
-    [MenuItem("Marathon Envs/Build All Environments (Windows)")]
-    public static void BuildAll()
+    [MenuItem("Marathon Envs/Build All Environments/Headless (Training)")]
+    public static void BuildAllHeadless() => BuildAll(headless: true);
+
+    [MenuItem("Marathon Envs/Build All Environments/With Graphics (Visualization)")]
+    public static void BuildAllWithGraphics() => BuildAll(headless: false);
+
+    [MenuItem("Marathon Envs/Build Single Environment (Windows)")]
+    static void OpenBuildSingleWindow() => BuildSingleWindow.Open();
+
+    // -------------------------------------------------------------------------
+    // Core batch build
+    // -------------------------------------------------------------------------
+
+    static void BuildAll(bool headless)
     {
         if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
             return;
 
+        string label = headless ? "Headless (Training)" : "With Graphics (Visualization)";
         if (!EditorUtility.DisplayDialog(
             "Build All Environments",
-            $"This will create {EnvIds.Length} Windows builds in:\n{BuildsRoot}\n\nThis may take a long time. Continue?",
+            $"Build type: {label}\n\nThis will create {EnvIds.Length} Windows builds in:\n{BuildsRoot}\n\nThis may take a long time. Continue?",
             "Build All", "Cancel"))
             return;
 
-        string originalEnvId = ReadEnvIdDefault();
+        string originalEnvId  = ReadEnvIdDefault();
+        bool originalHeadless = PlayerSettings.dedicatedServerOptimizations;
         int succeeded = 0;
 
         try
         {
+            PlayerSettings.dedicatedServerOptimizations = headless;
+
             for (int i = 0; i < EnvIds.Length; i++)
             {
                 string envId = EnvIds[i];
                 EditorUtility.DisplayProgressBar(
                     "Building Environments",
-                    $"{envId}  ({i + 1} / {EnvIds.Length})",
+                    $"{envId}  ({i + 1} / {EnvIds.Length})  [{label}]",
                     (float)i / EnvIds.Length
                 );
 
@@ -80,25 +97,21 @@ public static class BatchBuild
         finally
         {
             EditorUtility.ClearProgressBar();
+            PlayerSettings.dedicatedServerOptimizations = originalHeadless;
             WriteEnvIdDefault(originalEnvId);
         }
 
         int failed = EnvIds.Length - succeeded;
         string msg = failed == 0
-            ? $"All {EnvIds.Length} environments built successfully.\n\nOutput: {BuildsRoot}"
+            ? $"All {EnvIds.Length} environments built successfully.\n\nType: {label}\nOutput: {BuildsRoot}"
             : $"{succeeded}/{EnvIds.Length} succeeded. {failed} failed — see Console for details.";
 
         EditorUtility.DisplayDialog("Build Complete", msg, "OK");
     }
 
-    [MenuItem("Marathon Envs/Build Single Environment (Windows)")]
-    static void OpenBuildSingleWindow()
-    {
-        BuildSingleWindow.Open();
-    }
-
     // -------------------------------------------------------------------------
-    // Core build method — public so BuildSingleWindow can call it
+    // Core build method — public so BuildSingleWindow can call it.
+    // Headless flag must be set by the caller before invoking.
     // -------------------------------------------------------------------------
 
     public static bool BuildEnvironment(string envId)
@@ -110,10 +123,10 @@ public static class BatchBuild
 
         BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
         {
-            scenes          = new[] { ScenePath },
+            scenes           = new[] { ScenePath },
             locationPathName = outputPath,
-            target          = BuildTarget.StandaloneWindows64,
-            options         = BuildOptions.None,
+            target           = BuildTarget.StandaloneWindows64,
+            options          = BuildOptions.None,
         });
 
         bool ok = report.summary.result == BuildResult.Succeeded;
@@ -157,12 +170,13 @@ public static class BatchBuild
 
 class BuildSingleWindow : EditorWindow
 {
-    int _selectedIndex;
+    int  _selectedIndex;
+    bool _headless = true;
 
     public static void Open()
     {
         var w = GetWindow<BuildSingleWindow>("Build Single Environment");
-        w.minSize = new Vector2(320, 90);
+        w.minSize = new Vector2(320, 110);
         w.ShowUtility();
     }
 
@@ -170,6 +184,8 @@ class BuildSingleWindow : EditorWindow
     {
         EditorGUILayout.Space(8);
         _selectedIndex = EditorGUILayout.Popup("Environment", _selectedIndex, BatchBuild.EnvIds);
+        EditorGUILayout.Space(4);
+        _headless = EditorGUILayout.Toggle("Headless (Training)", _headless);
         EditorGUILayout.Space(8);
 
         if (GUILayout.Button("Build"))
@@ -177,16 +193,19 @@ class BuildSingleWindow : EditorWindow
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
                 return;
 
-            string envId        = BatchBuild.EnvIds[_selectedIndex];
+            string envId         = BatchBuild.EnvIds[_selectedIndex];
             string originalEnvId = BatchBuild.ReadEnvIdDefault();
+            bool originalHeadless = PlayerSettings.dedicatedServerOptimizations;
             Close();
 
             try
             {
+                PlayerSettings.dedicatedServerOptimizations = _headless;
                 BatchBuild.BuildEnvironment(envId);
             }
             finally
             {
+                PlayerSettings.dedicatedServerOptimizations = originalHeadless;
                 BatchBuild.WriteEnvIdDefault(originalEnvId);
             }
         }
