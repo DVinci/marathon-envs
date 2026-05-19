@@ -408,7 +408,7 @@ ML-Agents checkpoints are tiny because the network is small (64 units × 2 layer
 | `.pt` (resume checkpoint) | ~189 KB |
 | `.onnx` (inference model) | ~34 KB |
 
-To capture finer-grained best moments, lower `checkpoint_interval` in the config. The default is 500,000 steps. Setting it to 50,000 costs ~19 MB over a 5M-step run with `keep_checkpoints: 5` (only 5 `.pt` files kept at any time).
+The config uses `checkpoint_interval: 100000` and `keep_checkpoints: 10` for all environments — a checkpoint every 100k steps, last 10 kept (~1.9 MB on disk). This limits data loss on interrupt to at most 100k steps, making overnight stop/resume reliable.
 
 ---
 
