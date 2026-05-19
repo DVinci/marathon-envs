@@ -28,18 +28,6 @@ No manual configuration is needed in Claude Code — the MCP server appears auto
 
 ---
 
-## First Connection / Re-Approving Access
-
-When Claude Code connects for the first time, or if the connection is ever revoked, Unity will block calls with:
-
-```
-"Connection revoked. Go to Unity Editor > Project Settings > AI > Unity MCP to change approval."
-```
-
-To fix: open Unity Editor → **Edit → Project Settings → AI → Unity MCP** → approve the pending connection. Gateway connections (Claude Code) are auto-remembered after the first approval.
-
----
-
 ## Verifying the Connection
 
 With Unity Editor open and connection approved, run:
@@ -48,21 +36,54 @@ With Unity Editor open and connection approved, run:
 Unity_ManageEditor(Action="GetState")
 ```
 
-A successful response looks like:
+A successful response (confirmed on this machine):
 
 ```json
 {
   "success": true,
   "data": {
-    "isPlaying": false,
-    "isPaused": false,
-    "isCompiling": false,
-    "platform": "StandaloneWindows64"
+    "IsPlaying": false,
+    "IsPaused": false,
+    "IsCompiling": false,
+    "IsUpdating": false,
+    "ApplicationPath": "D:/Unity/Editor/6000.3.15f1/Editor/Unity.exe",
+    "TimeSinceStartup": 869.6
   }
 }
 ```
 
-If it returns `"Unity not detected"`, the Editor is closed. If it returns `"Connection revoked"`, re-approve in Project Settings.
+---
+
+## Troubleshooting
+
+### `"Unity not detected"`
+
+The Unity Editor is not running. Open the project at `d:\Projetos\marathon-envs\UnitySDK`.
+
+### `"Connection revoked"` (most common issue)
+
+The relay binary has a stale revoked session cached. The fix is to kill the relay process — it will reconnect fresh on the next tool call:
+
+```powershell
+# Find and kill the relay process
+Stop-Process -Name relay_win -Force
+```
+
+Then retry the tool call. You do **not** need to restart Unity or touch Project Settings.
+
+**Why this happens:** Unity stores a revocation per relay session. The relay binary (`relay_win.exe`) is a persistent process — restarting the Unity bridge doesn't restart the relay. Killing relay_win.exe forces a new session with a new connection ID that Unity hasn't revoked.
+
+### `"Capacity limit"` in Project Settings
+
+Unity allows **1 direct connection at a time**. If two relay processes are running (can happen after repeated stop/start cycles), one will show "Capacity limit" in the UI. Kill all relay instances and let them reconnect:
+
+```powershell
+Get-Process relay_win | Stop-Process -Force
+```
+
+### Multiple `claude-code` entries in Project Settings
+
+Each relay process registers as a separate client. After killing stale relays, old entries will disappear from the UI on the next refresh. This is cosmetic — the active connection is the green "Accepted" entry under "Connected Clients".
 
 ---
 
