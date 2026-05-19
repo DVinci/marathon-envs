@@ -202,13 +202,83 @@ python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_
 
 ---
 
-## Building Headless Executable (Unity 6)
+## Building Executables
+
+### Single build (manual)
 
 1. File → **Build Profiles** (Ctrl+Shift+B)
 2. Select **Windows Server** in left panel
 3. Click **Build** → save to `builds/<EnvName>/`
 
 The `.exe` is launched automatically by mlagents-learn via `--env=`.
+
+### Batch build — all 16 environments
+
+The Unity Editor menu **Marathon Envs → Build All Environments (Windows)** builds one executable per environment automatically. Each build has `envIdDefault` pre-set so training can start without passing `--spawn-env`.
+
+**Menu:** `Marathon Envs → Build All Environments (Windows)`
+
+Output: `builds/<envId>/Marathon Environments.exe` × 16
+
+A progress bar tracks completion. The scene's `envIdDefault` is restored to its original value after all builds finish. There is also a **Build Single Environment (Windows)** menu item for rebuilding just one environment after a change.
+
+Source: [UnitySDK/Assets/Editor/BatchBuild.cs](../UnitySDK/Assets/Editor/BatchBuild.cs)
+
+---
+
+## Batch Training — All Environments
+
+`train_all_envs.py` trains every pre-built environment in sequence. Each environment gets its own `mlagents-learn` run with a dated run-ID, and best-model tracking (same as `train_ppo.py`) is applied automatically.
+
+### Basic usage
+
+```bash
+# Train all 16 environments with defaults (headless, 1 Unity process, 1 env per process)
+python train_all_envs.py
+
+# Recommended: 4 parallel instances per build (good for 4-core CPU)
+python train_all_envs.py --num-spawn-envs 4
+
+# Train only a subset
+python train_all_envs.py --envs Hopper-v0 Walker2d-v0 Ant-v0
+
+# Resume a batch that was interrupted (uses the same dated prefix)
+python train_all_envs.py --run-prefix 20260519 --resume
+```
+
+### Run IDs
+
+Each environment gets the run-ID `<prefix>-<envId>`. The prefix defaults to today's date (`YYYYMMDD`), e.g. `20260519-Walker2d-v0`. Summaries and checkpoints land in the usual `summaries/` and `results/` folders.
+
+### Flags
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--run-prefix PREFIX` | today's date | Prefix for all run-IDs in this batch |
+| `--envs ENV …` | all 16 | Train only the listed environments |
+| `--num-envs N` | 1 | Parallel Unity processes per build |
+| `--num-spawn-envs N` | 1 | Parallel env instances inside each process |
+| `--resume` | off | Pass `--resume` to mlagents-learn (continue existing runs) |
+| `--graphics` | off | Enable graphics (headless by default) |
+
+### Build prerequisite
+
+`train_all_envs.py` skips any environment whose build folder doesn't exist yet — it will print `[SKIP] <envId> — build not found`. Run **Marathon Envs → Build All Environments (Windows)** in the Unity Editor first to generate all builds.
+
+### Output
+
+At the end of the batch, a summary is printed:
+
+```text
+================================================================
+TRAINING SUMMARY
+================================================================
+  Completed (14): Hopper-v0, Walker2d-v0, ...
+  Skipped   ( 2): MarathonManJazzDancing-v0, MarathonManBackflip-v0
+================================================================
+```
+
+Exits with code `1` if any run failed, `0` otherwise — safe to use in scripts.
 
 ---
 
