@@ -278,7 +278,9 @@ CALIBRATION RESULTS
 ========================================================================
 ```
 
-> **Anomalous readings:** Several environments show implausibly high steps/s values (2564–6906). These are measurement artifacts: when many environments reset simultaneously near the 5k→10k summary boundary, the step counter jumps ahead, compressing the time interval and inflating the rate. The **selected config** (num_envs × spawn) is still valid — it was simply the point at which this artifact produced the highest reading. Re-calibrate those environments if you want reliable throughput figures. **Ant-v0 zero throughput:** See Known Issues below.
+> **Calibration steps/s vs real training throughput:** The calibration script runs 10k-step trials. Short-run initialisation overhead means measured steps/s is roughly **half** of what you'll see in a sustained training run. Verified: Hopper-v0 shows 574 steps/s in calibration but **~1280 steps/s sustained** in a real 1M-step run (finished in ~13 min, not the ~29 min the calibration figure would predict). Use calibration numbers to compare environments relative to each other and pick configs — but multiply by ~2 for wall-clock time estimates.
+>
+> **Anomalous readings:** Several environments show implausibly high steps/s (2564–6906). These are measurement artifacts: when many environments reset simultaneously near the 5k→10k boundary the step counter jumps, compressing the interval. The selected config is still valid for training.
 
 ### Calibration flags
 
@@ -300,6 +302,31 @@ Remove-Item -Recurse results\calib_* summaries\calib_*
 ## Batch Training — All Environments
 
 `train_all_envs.py` trains every pre-built environment in sequence. Each environment gets its own `mlagents-learn` run with a dated run-ID, and best-model tracking (same as `train_ppo.py`) is applied automatically.
+
+### Estimated training times (i7-3770S, optimal spawn config)
+
+Calibration steps/s is ~½ of sustained training throughput (verified on Hopper-v0: 574 calibrated → 1280 sustained, 1M steps in ~13 min). Estimates below use the ×2 correction.
+
+| Environment | max_steps | Est. time |
+| --- | --- | --- |
+| Hopper-v0 | 1M | **~13 min** ✓ |
+| Ant-v0 | 1M | **~14 min** |
+| Walker2d-v0 | 5M | **~70 min** |
+| MarathonMan-v0 | 10M | **~3 h** |
+| MarathonManSparse-v0 | 10M | **~3 h** |
+| TerrainHopper-v0 | 50M | **~12 h** |
+| TerrainWalker2d-v0 | 50M | **~13 h** |
+| TerrainAnt-v0 | 50M | **~13 h** |
+| TerrainMarathonMan-v0 | 50M | **~14 h** |
+| MarathonManWalking-v0 | 64M | **~14 h** |
+| MarathonManMMAKick-v0 | 64M | **~15 h** |
+| MarathonManRunning-v0 | 64M | **~15 h** |
+| MarathonManJazzDancing-v0 | 64M | **~15 h** |
+| MarathonManBackflip-v0 | 128M | **~30 h** |
+| MarathonManPunchingBag-v0 | 64M | **~25 h** |
+| ControllerMarathonMan-v0 | 128M | **~48 h** |
+
+**Sequential total: ~220 h** (~9 days non-stop). Run subsets or individual environments rather than the full batch.
 
 ### Basic usage
 
