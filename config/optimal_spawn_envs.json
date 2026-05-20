@@ -10,9 +10,9 @@
     "steps_per_sec": 592.6
   },
   "Ant-v0": {
-    "num_envs": 1,
-    "num_spawn_envs": 1,
-    "steps_per_sec": 0.0
+    "num_envs": 4,
+    "num_spawn_envs": 50,
+    "steps_per_sec": 591.2
   },
   "MarathonMan-v0": {
     "num_envs": 4,

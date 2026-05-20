@@ -258,7 +258,7 @@ CALIBRATION RESULTS
   ------------------------------------------------------------------------
   Hopper-v0                               4      50      574.4
   Walker2d-v0                             4      50      592.6
-  Ant-v0                                  4      50      ~580    (recalibrated after .nn fix; see Known Issues)
+  Ant-v0                                  4      50      591.2
   MarathonMan-v0                          4      25      466.2
   MarathonManSparse-v0                    4     100      477.5
   TerrainHopper-v0                        4      50      589.0

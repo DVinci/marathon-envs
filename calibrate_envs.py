@@ -112,7 +112,7 @@ def _run(env_id: str, run_id: str, num_envs: int, num_spawn_envs: int) -> tuple[
     data_points: list[tuple[int, float]] = []
 
     for line in proc.stdout:
-        sys.stdout.write(line)
+        sys.stdout.buffer.write(line.encode(sys.stdout.encoding or "utf-8", errors="replace"))
         sys.stdout.flush()
         m = _THROUGHPUT_RE.search(line)
         if m:
