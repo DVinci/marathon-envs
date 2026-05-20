@@ -23,6 +23,8 @@ def main() -> int:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
 
@@ -30,7 +32,7 @@ def main() -> int:
     window_best = float("-inf")  # max reward seen since last checkpoint export
 
     for line in proc.stdout:
-        sys.stdout.write(line)
+        sys.stdout.buffer.write(line.encode(sys.stdout.encoding or "utf-8", errors="replace"))
         sys.stdout.flush()
 
         m = _REWARD_RE.search(line)
