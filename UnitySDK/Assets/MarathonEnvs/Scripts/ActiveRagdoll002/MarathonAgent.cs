@@ -241,6 +241,10 @@ public class MarathonAgent : Agent
         {
             if (!_hasLazyInitialized)
             {
+                // OnDisable (e.g. during scene transfer) triggers CollectObservations before
+                // the GameObject hierarchy is ready. Skip lazy-init until the agent is active.
+                if (!isActiveAndEnabled)
+                    return;
                 OnEpisodeBegin();
             }
             UpdateQ();
