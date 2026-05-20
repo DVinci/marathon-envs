@@ -11,7 +11,7 @@ Phase 2 — Resume (Walker2d-v0 only):
 
 Usage:
     python test_training.py
-    python test_training.py --num-spawn-envs 4   # fewer parallel envs
+    python test_training.py --num-spawn-envs 4   # more parallel envs per process
     python test_training.py --phase1-only        # skip resume test
     python test_training.py --phase2-only        # skip the 16-env sweep
 """
@@ -49,7 +49,6 @@ TEST_CONFIG  = "config/marathon_envs_test_config.yaml"
 BUILDS_DIR   = Path("builds")
 EXE_NAME     = "Marathon Environments.exe"
 RESULTS_DIR  = Path("results")
-SUMMARIES_DIR = Path("summaries")
 
 _REWARD_RE = re.compile(r"Mean Reward:\s+([-\d]+(?:\.\d+)?)")
 _EXPORT_RE = re.compile(r"Exported\s+(.+\.onnx)")
@@ -77,7 +76,7 @@ def _run(env_id: str, run_id: str, config: str, num_envs: int, num_spawn_envs: i
     ]
     if resume:
         cmd.append("--resume")
-    cmd += ["--env-args", f"--num-spawn-envs={num_spawn_envs}"]
+    cmd += ["--env-args", f"--spawn-env={env_id}", f"--num-spawn-envs={num_spawn_envs}"]
 
     divider = "-" * 56
     print(f"\n{divider}")
@@ -85,15 +84,16 @@ def _run(env_id: str, run_id: str, config: str, num_envs: int, num_spawn_envs: i
     print(f"{divider}")
 
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
     )
 
-    global_best = float("-inf")
+    global_best = None  # type: float | None  — None until first checkpoint saved
     window_best = float("-inf")
     lines: list[str] = []
 
     for line in proc.stdout:
-        sys.stdout.write(line)
+        sys.stdout.buffer.write(line.encode(sys.stdout.encoding or "utf-8", errors="replace"))
         sys.stdout.flush()
         lines.append(line)
 
@@ -106,11 +106,11 @@ def _run(env_id: str, run_id: str, config: str, num_envs: int, num_spawn_envs: i
         m = _EXPORT_RE.search(line)
         if m:
             onnx_path = Path(m.group(1).strip())
-            if window_best > global_best:
+            if global_best is None or window_best > global_best:
                 best_path = onnx_path.parent / "best_model.onnx"
                 shutil.copy2(onnx_path, best_path)
                 global_best = window_best
-                print(f"  → New best: {global_best:.1f}  (saved {best_path})", flush=True)
+                print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
             window_best = float("-inf")
 
     proc.wait()
@@ -122,13 +122,21 @@ def _run(env_id: str, run_id: str, config: str, num_envs: int, num_spawn_envs: i
 # ---------------------------------------------------------------------------
 
 def _check_run_outputs(run_id: str, env_id: str) -> list[tuple[str, bool, str]]:
-    env_dir  = RESULTS_DIR / run_id / env_id
-    summ_dir = SUMMARIES_DIR / run_id
+    run_dir = RESULTS_DIR / run_id
+
+    # Style-transfer envs report BehaviorName="My Behavior" at runtime, so their
+    # model subdir is "My Behavior" rather than the env_id.
+    env_dir = run_dir / env_id
+    if not env_dir.exists() and run_dir.exists():
+        subdirs = [d for d in run_dir.iterdir() if d.is_dir()]
+        if subdirs:
+            env_dir = subdirs[0]
 
     checks = []
 
     onnx_checkpoints = [
-        f for f in (env_dir.glob(f"{env_id}-*.onnx") if env_dir.exists() else [])
+        f for f in (env_dir.glob("*.onnx") if env_dir.exists() else [])
+        if f.name != "best_model.onnx"
     ]
     checks.append((
         "checkpoint .onnx saved",
@@ -143,7 +151,8 @@ def _check_run_outputs(run_id: str, env_id: str) -> list[tuple[str, bool, str]]:
         "present" if best.exists() else "MISSING",
     ))
 
-    tb_files = list(summ_dir.glob("events.out.tfevents.*")) if summ_dir.exists() else []
+    # ml-agents writes tfevents into results/<run_id>/<behavior>/, not a separate summaries dir
+    tb_files = list(env_dir.glob("events.out.tfevents.*")) if env_dir.exists() else []
     checks.append((
         "TensorBoard events written",
         len(tb_files) >= 1,
@@ -287,7 +296,7 @@ def _print_report(phase1_results: dict, phase2_results: list | None) -> int:
             env_ok = all(ok for _, ok, _ in checks)
             tag = "PASS" if env_ok else "FAIL"
             detail = "  |  ".join(f"{name}: {det}" for name, ok, det in checks if not ok) or ""
-            suffix = f"  ← {detail}" if detail else ""
+            suffix = f"  <- {detail}" if detail else ""
             print(f"  [{tag}]  {env_id:<32}{suffix}")
             if env_ok:
                 passed += 1
@@ -316,9 +325,9 @@ def _print_report(phase1_results: dict, phase2_results: list | None) -> int:
     else:
         print(f"\n  {failed} check(s) failed — investigate before starting full training.\n")
 
-    print("  Test artifacts left in results/ and summaries/ under run-prefix 'test_*'.")
+    print("  Test artifacts left in results/ under run-prefix 'test_*'.")
     print("  Delete when no longer needed:\n")
-    print("    Remove-Item -Recurse results\\test_* summaries\\test_*\n")
+    print("    Remove-Item -Recurse results\\test_*\n")
 
     return 0 if failed == 0 else 1
 
@@ -331,8 +340,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Smoke-test the Marathon Envs batch training infrastructure."
     )
-    parser.add_argument("--num-envs",       type=int, default=4,  metavar="N")
-    parser.add_argument("--num-spawn-envs", type=int, default=50, metavar="N")
+    parser.add_argument("--num-envs",       type=int, default=1,  metavar="N")
+    parser.add_argument("--num-spawn-envs", type=int, default=4,  metavar="N")
     parser.add_argument("--phase1-only",    action="store_true")
     parser.add_argument("--phase2-only",    action="store_true")
     args = parser.parse_args()
