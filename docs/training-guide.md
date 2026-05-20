@@ -258,7 +258,7 @@ CALIBRATION RESULTS
   ------------------------------------------------------------------------
   Hopper-v0                               4      50      574.4
   Walker2d-v0                             4      50      592.6
-  Ant-v0                                  1       1        0.0  (broken — see Known Issues)
+  Ant-v0                                  4      50      ~580    (recalibrated after .nn fix; see Known Issues)
   MarathonMan-v0                          4      25      466.2
   MarathonManSparse-v0                    4     100      477.5
   TerrainHopper-v0                        4      50      589.0
@@ -558,11 +558,13 @@ Larger networks do not automatically produce better policies for the same task. 
 
 ## Known Issues
 
-### Ant-v0: Behavior Type misconfiguration
+### Ant-v0: stale Barracuda model in env prefab (fixed)
 
-`Ant-v0` always times out during training (0 steps/s). The root cause is that `Behavior Type` in the Unity prefab is not set to `Default`, so the agent never registers a brain with ML-Agents and the trainer waits until timeout. This is a build-level issue — it cannot be fixed in Python or YAML. To fix it, open the `Ant-v0` scene in the Unity Editor, set the agent's **Behavior Parameters → Behavior Type** to `Default`, and rebuild via **Marathon Envs → Build Single Environment (Windows)**.
+`Ant-v0` was timing out during training (0 steps/s) because `AntEnv-v0.prefab` was the only env prefab that explicitly overrode `m_Model` to an old Barracuda-format `.nn` file (`Ant-v0.nn`). Unity Sentis (ML-Agents 4.0.2) cannot load `.nn` format and crashes before the ML-Agents communicator connects, causing `UnityTimeOutException`.
 
-The entry in `config/optimal_spawn_envs.json` records `num_envs: 1, num_spawn_envs: 1, steps_per_sec: 0.0` as a placeholder. `train_all_envs.py` will attempt the run and report it as failed until the build is fixed.
+**Fix applied (commit `1b043f9`):** The `objectReference` in the `m_Model` override was nulled out (`{fileID: 0}`), matching the pattern used by all other working env prefabs. The Ant-v0 executable has been rebuilt against this fix.
+
+If you encounter a similar timeout with another environment, check whether its env prefab overrides `m_Model` to a `.nn` file — set it to `None` and rebuild.
 
 ### Style-transfer environments: "My Behavior" behavior name
 
