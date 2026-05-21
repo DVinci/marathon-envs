@@ -57,14 +57,14 @@ public class OpenAIAntAgent : MarathonAgent
 
     float StepRewardAnt101()
     {
-        float velocity = Mathf.Clamp(GetNormalizedVelocity("pelvis").x, 0f, 1f);
+        float velocity = Mathf.Clamp(GetNormalizedVelocity("pelvis").x, -1f, 1f);
         float effort = 1f - GetEffortNormalized();
 
         velocity *= 0.7f;
         if (velocity >= .3f)
             effort *= 0.3f;
         else
-            effort *= velocity;
+            effort *= Mathf.Max(velocity, 0f);
 
 
         var reward = velocity
