@@ -43,7 +43,7 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 64
       num_layers: 2
       vis_encode_type: simple
@@ -51,7 +51,7 @@ behaviors:
       extrinsic:
         gamma: 0.99
         strength: 1.0
-    max_steps: 1000000
+    max_steps: 5000000
     time_horizon: 100
     summary_freq: 10000
     checkpoint_interval: 10000
@@ -95,7 +95,7 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 64
       num_layers: 2
       vis_encode_type: simple
@@ -103,7 +103,7 @@ behaviors:
       extrinsic:
         gamma: 0.99
         strength: 1.0
-    max_steps: 1000000
+    max_steps: 5000000
     time_horizon: 100
     summary_freq: 10000
     checkpoint_interval: 10000
@@ -329,7 +329,7 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 64
       num_layers: 2
       vis_encode_type: simple
@@ -355,7 +355,7 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 64
       num_layers: 2
       vis_encode_type: simple
@@ -381,7 +381,7 @@ behaviors:
       num_epoch: 3
       learning_rate_schedule: linear
     network_settings:
-      normalize: false
+      normalize: true
       hidden_units: 64
       num_layers: 2
       vis_encode_type: simple
