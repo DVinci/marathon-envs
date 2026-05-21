@@ -107,7 +107,7 @@ def _run(env_id: str, run_id: str, config: str, num_envs: int, num_spawn_envs: i
         if m:
             onnx_path = Path(m.group(1).strip())
             if global_best is None or window_best > global_best:
-                best_path = onnx_path.parent / "best_model.onnx"
+                best_path = onnx_path.parent / f"{run_id}_best.onnx"
                 shutil.copy2(onnx_path, best_path)
                 global_best = window_best
                 print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
@@ -144,11 +144,11 @@ def _check_run_outputs(run_id: str, env_id: str) -> list[tuple[str, bool, str]]:
         f"{len(onnx_checkpoints)} checkpoint(s)",
     ))
 
-    best = env_dir / "best_model.onnx"
+    best_files = list(env_dir.glob("*_best.onnx")) if env_dir.exists() else []
     checks.append((
-        "best_model.onnx saved",
-        best.exists(),
-        "present" if best.exists() else "MISSING",
+        "best model saved",
+        len(best_files) >= 1,
+        best_files[0].name if best_files else "MISSING",
     ))
 
     # ml-agents writes tfevents into results/<run_id>/<behavior>/, not a separate summaries dir

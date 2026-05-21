@@ -107,7 +107,7 @@ def _train_one(
             if m:
                 onnx_path = Path(m.group(1).strip())
                 if global_best is None or window_best > global_best:
-                    best_path = onnx_path.parent / "best_model.onnx"
+                    best_path = onnx_path.parent / f"{run_id}_best.onnx"
                     shutil.copy2(onnx_path, best_path)
                     global_best = window_best
                     print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
