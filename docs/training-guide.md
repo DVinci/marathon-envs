@@ -402,6 +402,42 @@ Reward is noisy — look at the trend over 100k+ steps, not individual values.
 
 ---
 
+## Completed Training Runs
+
+All runs on i7-3770S / RTX 2070 Super, 4 processes × 50 spawn envs, PPO.
+
+### Classical environments
+
+| Run ID | Env | Steps | normalize | Final reward | Best reward | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 20260520-Walker2d-v0 | Walker2d-v0 | 5M | true | ~820 | ~828 | Reference run; well trained |
+| 20260520-Hopper-v0 | Hopper-v0 | 1M | **false** | 15.1 | 15.1 | Failed — agent barely stands; normalize was off |
+| 20260520-Ant-v0 | Ant-v0 | 1M | **false** | 167.1 | 243.4 | Partial learning; cut short + no normalize |
+| 20260521-Hopper-v0 | Hopper-v0 | 5M | true | **721.9** | **721.9** | 48× improvement over first run |
+| 20260521-Ant-v0 | Ant-v0 | 5M | true | **808.5** | **808.5** | Excellent; comparable to Walker2d |
+
+**Key finding:** `normalize: false` was the primary cause of poor Hopper and Ant results. Enabling it and extending to 5M steps brought both environments to 720–810 reward — in line with Walker2d.
+
+### Deployment-ready models
+
+| Model file | Reward | Status |
+| --- | --- | --- |
+| `results/20260521-Hopper-v0/Hopper-v0/20260521-Hopper-v0_best.onnx` | 721.9 | Ready |
+| `results/20260520-Walker2d-v0/Walker2d-v0/20260520-Walker2d-v0_best.onnx` | ~828 | Ready |
+| `results/20260521-Ant-v0/Ant-v0/20260521-Ant-v0_best.onnx` | 808.5 | Ready |
+
+Best models are named `<run_id>_best.onnx` — updated automatically during training whenever a checkpoint surpasses the previous peak reward.
+
+### Estimated time (actual)
+
+| Env | Steps | Wall time |
+| --- | --- | --- |
+| Hopper-v0 | 5M | ~2.4 h |
+| Walker2d-v0 | 5M | ~1.7 h |
+| Ant-v0 | 5M | ~2.35 h |
+
+---
+
 ## Evaluating Training Success
 
 There is no fixed reward ceiling — success is judged by multiple signals together.
