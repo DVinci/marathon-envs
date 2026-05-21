@@ -151,8 +151,8 @@ Each stats block has two sections:
 | Algorithm type | On-policy | Off-policy (replay buffer) |
 | Parallel envs | 200 (4 × 50) | 4 (1 per process) |
 | Steps/second | ~1300 | ~200–700 |
-| Steps to reward ~800 | ~4M | ~100k–200k |
-| Final policy quality | ~828 at 5M steps | expected 1500–3000+ at 1M steps |
+| Steps to reward ~800 | ~4M | never reached |
+| Final policy quality | ~828 at 5M steps | **655 at 1M steps** (worse than PPO) |
 | Resume support | Yes (`.pt` checkpoints) | Yes (`.zip` + replay buffer) |
 
 PPO parallelizes well across CPU cores. SAC needs far fewer steps to reach a good policy and runs on GPU for gradient computation.
