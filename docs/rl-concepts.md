@@ -96,7 +96,7 @@ Policies can be stacked at arbitrary depth:
 
 ```
 Level 3: Meta-controller  →  coordinates multiple agents toward shared goal
-Level 2: Per-agent controller  →  selects behaviours for each agent  
+Level 2: Per-agent controller  →  selects behaviours for each agent
 Level 1: Sub-policies  →  running, jumping, walking, etc.
 ```
 
