@@ -45,6 +45,7 @@ CONFIG       = "config/marathon_envs_config.yaml"
 BUILDS_DIR   = Path("builds")
 EXE_NAME     = "Marathon Environments.exe"
 OPTIMAL_FILE = Path("config/optimal_spawn_envs.json")
+STATE_FILE   = Path("train_all_envs.last_run")
 
 _REWARD_RE = re.compile(r"Mean Reward:\s+([-\d]+(?:\.\d+)?)")
 _EXPORT_RE = re.compile(r"Exported\s+(.+\.onnx)")
@@ -56,7 +57,7 @@ def _train_one(
 ) -> bool | None:
     exe = BUILDS_DIR / env_id / EXE_NAME
     if not exe.exists():
-        print(f"[SKIP] {env_id} — build not found: {exe}")
+        print(f"[SKIP] {env_id} - build not found: {exe}")
         return None
 
     cmd = [
@@ -64,9 +65,7 @@ def _train_one(
         f"--run-id={run_id}",
         f"--env={exe}",
     ]
-    if args.graphics:
-        pass  # omit --no-graphics
-    else:
+    if not args.graphics:
         cmd.append("--no-graphics")
     if num_envs > 1:
         cmd.append(f"--num-envs={num_envs}")
@@ -85,31 +84,43 @@ def _train_one(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
 
     global_best = None  # type: float | None
     window_best = float("-inf")
 
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
+    try:
+        for line in proc.stdout:
+            sys.stdout.buffer.write(line.encode(sys.stdout.encoding or "utf-8", errors="replace"))
+            sys.stdout.flush()
 
-        m = _REWARD_RE.search(line)
-        if m:
-            reward = float(m.group(1))
-            if reward > window_best:
-                window_best = reward
+            m = _REWARD_RE.search(line)
+            if m:
+                reward = float(m.group(1))
+                if reward > window_best:
+                    window_best = reward
 
-        m = _EXPORT_RE.search(line)
-        if m:
-            onnx_path = Path(m.group(1).strip())
-            if global_best is None or window_best > global_best:
-                best_path = onnx_path.parent / "best_model.onnx"
-                shutil.copy2(onnx_path, best_path)
-                global_best = window_best
-                print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
-            window_best = float("-inf")
+            m = _EXPORT_RE.search(line)
+            if m:
+                onnx_path = Path(m.group(1).strip())
+                if global_best is None or window_best > global_best:
+                    best_path = onnx_path.parent / "best_model.onnx"
+                    shutil.copy2(onnx_path, best_path)
+                    global_best = window_best
+                    print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
+                window_best = float("-inf")
+
+    except KeyboardInterrupt:
+        print(f"\n[INTERRUPTED] {env_id} - terminating subprocess...", flush=True)
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
 
     proc.wait()
     ok = proc.returncode == 0
@@ -132,7 +143,8 @@ def main() -> int:
         "--envs",
         nargs="+",
         metavar="ENV_ID",
-        help="Train only these environments (default: all 16).",
+        help="Train only these environments (default: all 16). "
+             "When resuming, omitting --envs restores the original env list.",
     )
     parser.add_argument(
         "--num-envs",
@@ -162,38 +174,54 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    prefix_file = Path("train_all_envs.last_prefix")
+    # Resolve prefix and env list, restoring from state file when resuming
+    saved_state: dict = {}
+    if args.resume and STATE_FILE.exists():
+        try:
+            saved_state = json.loads(STATE_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
 
     if args.run_prefix:
         prefix = args.run_prefix
-    elif args.resume and prefix_file.exists():
-        prefix = prefix_file.read_text().strip()
-        print(f"Resuming batch with prefix: {prefix}  (from {prefix_file})")
+    elif saved_state.get("prefix"):
+        prefix = saved_state["prefix"]
+        print(f"Resuming batch with prefix: {prefix}  (from {STATE_FILE})")
     else:
         prefix = datetime.date.today().strftime("%Y%m%d")
 
-    envs = args.envs or ENVS
+    if args.envs:
+        envs = args.envs
+    elif args.resume and saved_state.get("envs"):
+        envs = saved_state["envs"]
+        print(f"Resuming env list: {', '.join(envs)}")
+    else:
+        envs = ENVS
 
     unknown = [e for e in envs if e not in ENVS]
     if unknown:
         parser.error(f"Unknown environment IDs: {', '.join(unknown)}")
 
-    # Load per-environment optimal params if no CLI override
+    # Always load optimal params; CLI flags override per-field
     optimal: dict = {}
-    if OPTIMAL_FILE.exists() and args.num_envs is None and args.num_spawn_envs is None:
+    if OPTIMAL_FILE.exists():
         optimal = json.loads(OPTIMAL_FILE.read_text())
         print(f"Loaded per-environment optimal params from {OPTIMAL_FILE}")
 
-    prefix_file.write_text(prefix)
-    print(f"Run prefix: {prefix}  (saved to {prefix_file})")
+    STATE_FILE.write_text(json.dumps({"prefix": prefix, "envs": envs}))
+    print(f"Run prefix: {prefix}  (saved to {STATE_FILE})")
     print(f"To resume this batch:  python train_all_envs.py --resume\n")
 
     results: dict[str, bool | None] = {}
-    for env_id in envs:
-        entry = optimal.get(env_id, {})
-        num_envs     = args.num_envs       if args.num_envs       is not None else entry.get("num_envs", 1)
-        num_spawn    = args.num_spawn_envs if args.num_spawn_envs is not None else entry.get("num_spawn_envs", 50)
-        results[env_id] = _train_one(env_id, f"{prefix}-{env_id}", args, num_envs, num_spawn)
+    try:
+        for env_id in envs:
+            entry = optimal.get(env_id, {})
+            num_envs  = args.num_envs       if args.num_envs       is not None else entry.get("num_envs", 1)
+            num_spawn = args.num_spawn_envs if args.num_spawn_envs is not None else entry.get("num_spawn_envs", 50)
+            results[env_id] = _train_one(env_id, f"{prefix}-{env_id}", args, num_envs, num_spawn)
+    except KeyboardInterrupt:
+        remaining = [e for e in envs if e not in results]
+        print(f"\n[INTERRUPTED] Batch cancelled. Remaining: {', '.join(remaining)}", flush=True)
 
     divider = "=" * 64
     done    = [e for e, r in results.items() if r is True]
