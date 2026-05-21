@@ -88,7 +88,7 @@ def _train_one(
         bufsize=1,
     )
 
-    global_best = float("-inf")
+    global_best = None  # type: float | None
     window_best = float("-inf")
 
     for line in proc.stdout:
@@ -104,11 +104,11 @@ def _train_one(
         m = _EXPORT_RE.search(line)
         if m:
             onnx_path = Path(m.group(1).strip())
-            if window_best > global_best:
+            if global_best is None or window_best > global_best:
                 best_path = onnx_path.parent / "best_model.onnx"
                 shutil.copy2(onnx_path, best_path)
                 global_best = window_best
-                print(f"  → New best: {global_best:.1f}  (saved {best_path})", flush=True)
+                print(f"  -> New best: {global_best:.1f}  (saved {best_path})", flush=True)
             window_best = float("-inf")
 
     proc.wait()
