@@ -43,6 +43,7 @@
 /results
 /builds
 /envs
+/UnitySDK/Assets/ML-Agents/Timers/
 /UnitySDK/Assets/ML-Agents/Plugins/Android*
 /UnitySDK/Assets/ML-Agents/Plugins/iOS*
 /UnitySDK/Assets/ML-Agents/Plugins/Computer*
@@ -125,6 +126,17 @@ playwright-report/
 test-results/
 blob-report/
 .playwright-cache/
+
+# Claude Code
+.claude/
+
+# Training run state
+train_all_envs.last_run
+train_all_envs.last_prefix
+
+# Unity AI Assistant (personal config)
+/UnitySDK/Assets/AssistantCustomInstructions.txt
+/UnitySDK/Assets/AssistantCustomInstructions.txt.meta
 
 # Misc
 *.tmp
