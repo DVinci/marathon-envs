@@ -414,7 +414,9 @@ All runs on i7-3770S / RTX 2070 Super, 4 processes × 50 spawn envs, PPO.
 | 20260520-Hopper-v0 | Hopper-v0 | 1M | **false** | 15.1 | 15.1 | Failed — agent barely stands; normalize was off |
 | 20260520-Ant-v0 | Ant-v0 | 1M | **false** | 167.1 | 243.4 | Partial learning; cut short + no normalize |
 | 20260521-Hopper-v0 | Hopper-v0 | 5M | true | **721.9** | **721.9** | 48× improvement over first run |
-| 20260521-Ant-v0 | Ant-v0 | 5M | true | **808.5** | **808.5** | Excellent; comparable to Walker2d |
+| 20260521-Ant-v0 | Ant-v0 | 5M | true | 808.5 | 808.5 | Reward-hacking + time_horizon bug (see below) |
+| 20260522-Ant-v0 | Ant-v0 | 5M | true | **840.0** | **857.9** | Fixed: velocity clamp (-1,1) + time_horizon 1000; stable plateau |
+| 20260522-MarathonMan-v0 | MarathonMan-v0 | 10M | true | 8.0 | 8.1 | Still learning at 10M — needs 30–50M for stable gait |
 
 **Key finding:** `normalize: false` was the primary cause of poor Hopper and Ant results. Enabling it and extending to 5M steps brought both environments to 720–810 reward — in line with Walker2d.
 
@@ -424,7 +426,9 @@ All runs on i7-3770S / RTX 2070 Super, 4 processes × 50 spawn envs, PPO.
 | --- | --- | --- |
 | `results/20260521-Hopper-v0/Hopper-v0/20260521-Hopper-v0_best.onnx` | 721.9 | Ready |
 | `results/20260520-Walker2d-v0/Walker2d-v0/20260520-Walker2d-v0_best.onnx` | ~828 | Ready |
-| `results/20260521-Ant-v0/Ant-v0/20260521-Ant-v0_best.onnx` | 808.5 | Ready |
+| `results/20260521-Ant-v0/Ant-v0/20260521-Ant-v0_best.onnx` | 808.5 | Superseded — reward hacking bug |
+| `results/20260522-Ant-v0/Ant-v0/20260522-Ant-v0_best.onnx` | 857.9 | Ready |
+| `results/20260522-MarathonMan-v0/MarathonMan-v0/20260522-MarathonMan-v0_best.onnx` | 8.1 | Under-trained — needs 30–50M steps |
 
 Best models are named `<run_id>_best.onnx` — updated automatically during training whenever a checkpoint surpasses the previous peak reward.
 
