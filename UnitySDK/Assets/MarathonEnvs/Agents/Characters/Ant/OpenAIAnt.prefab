@@ -73,7 +73,7 @@ MonoBehaviour:
     vectorActionSize: 08000000
     vectorActionDescriptions: []
     vectorActionSpaceType: 1
-  m_Model: {fileID: 11400000, guid: 0c340628b057daa48859062905b0dfeb, type: 3}
+  m_Model: {fileID: 11400000, guid: 92d63225096455943a42710c9a2a2bf1, type: 3}
   m_InferenceDevice: 0
   m_BehaviorType: 0
   m_BehaviorName: Ant-v0
