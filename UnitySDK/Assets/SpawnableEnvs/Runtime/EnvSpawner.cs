@@ -4,10 +4,8 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace MLAgents
-{
-    /// <summary>
-    /// EnvSpawner holds references to envIds, prefabs, brains for spawning environments.
+/// <summary>
+/// EnvSpawner holds references to envIds, prefabs, brains for spawning environments.
     /// </summary>
     [System.Serializable]
     public class EnvSpawner
@@ -72,7 +70,7 @@ namespace MLAgents
 
             for (int i = 0; i < numInstances; i++)
             {
-                var agent = Agent.Instantiate(envPrefab, spawnStartPos, envPrefab.gameObject.transform.rotation);
+                var agent = UnityEngine.Object.Instantiate(envPrefab, spawnStartPos, envPrefab.gameObject.transform.rotation);
                 spawnStartPos += step;
                 if (spawnableEnv.CreateUniquePhysicsScene)
                 {
@@ -98,5 +96,4 @@ namespace MLAgents
         {
             spawnableEnvDefinitions.Clear();
         }
-    }
 }

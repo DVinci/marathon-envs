@@ -5,14 +5,12 @@ using System.Linq;
 using UnityEditor.SceneManagement;
 using System.Collections.Generic;
 
-namespace MLAgents
+/// <summary>
+/// PropertyDrawer for EnvSpawner. Used to display the EnvSpawner in the Inspector.
+/// </summary>
+[CustomPropertyDrawer(typeof(EnvSpawner))]
+public class EnvSpawnerDrawer : PropertyDrawer
 {
-    /// <summary>
-    /// PropertyDrawer for EnvSpawner. Used to display the EnvSpawner in the Inspector.
-    /// </summary>
-    [CustomPropertyDrawer(typeof(EnvSpawner))]
-    public class EnvSpawnerDrawer : PropertyDrawer
-    {
         private EnvSpawner _envSpawner;
         private int _choiceIndex;
         // The height of a line in the Unity Inspectors
@@ -248,4 +246,3 @@ namespace MLAgents
             _envSpawner.spawnableEnvDefinitions.Add(item);
         }
     }
-}

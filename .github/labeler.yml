@@ -1,0 +1,19 @@
+environments:
+  - changed-files:
+    - any-glob-to-any-file: 'UnitySDK/Assets/MarathonEnvs/**'
+
+python:
+  - changed-files:
+    - any-glob-to-any-file: ['marathon-envs/**', 'stable_baselines_*.py']
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file: ['*.md', 'docs/**']
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**', 'playwright.config.ts', 'package*.json']
+
+config:
+  - changed-files:
+    - any-glob-to-any-file: 'config/**'

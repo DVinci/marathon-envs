@@ -7,7 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
 
 
 [System.Serializable]

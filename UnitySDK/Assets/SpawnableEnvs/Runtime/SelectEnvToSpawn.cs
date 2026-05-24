@@ -1,14 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using MLAgents;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Unity.MLAgents;
 
-namespace MLAgents
+public class SelectEnvToSpawn : MonoBehaviour
 {
-    public class SelectEnvToSpawn : MonoBehaviour
-    {
         public EnvSpawner agentSpawner;
         public bool DebugSkipPopUp;
         bool showPopUp = false;
@@ -185,4 +183,3 @@ namespace MLAgents
             agentSpawner.SpawnSpawnableEnv(this.gameObject, GetNumAgents() ,spawnPrefab);
         }
     }
-}

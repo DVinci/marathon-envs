@@ -36,6 +36,6 @@ setup(
     author_email="joe@joebooth.com",
     url="https://github.com/Unity-Technologies/marathon-envs",
     packages=find_packages(),
-    install_requires=["gym", "mlagents_envs=={}".format(VERSION)],
+    install_requires=["gymnasium>=0.29.1", "mlagents-envs==1.1.0", "numpy>=1.21"],
     # cmdclass={"verify": VerifyVersionCommand},
 )

@@ -1,9 +1,6 @@
 using UnityEngine;
 
-namespace MLAgents 
+public interface IOnTerrainCollision
 {
-    public interface IOnTerrainCollision
-    {
-        void OnTerrainCollision(GameObject other, GameObject terrain);
-    }
+    void OnTerrainCollision(GameObject other, GameObject terrain);
 }

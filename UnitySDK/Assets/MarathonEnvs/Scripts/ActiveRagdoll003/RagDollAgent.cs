@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
 using UnityEngine;
 
 public class RagDollAgent : Agent 
@@ -56,7 +58,7 @@ public class RagDollAgent : Agent
     {
         if (debugCopyMocap)
         {
-            Done();
+            EndEpisode();
         }
         if (!_hasLazyInitialized)
         {
@@ -67,51 +69,51 @@ public class RagDollAgent : Agent
         if (!_spawnableEnv.IsPointWithinBoundsInWorldSpace(_mocapController.transform.position)) {
             _mocapController.transform.position = _spawnableEnv.transform.position;
             _trackBodyStatesInWorldSpace.Reset();
-            Done();
+            EndEpisode();
         }
 
     }
-	override public void CollectObservations()
+	override public void CollectObservations(VectorSensor sensor)
     {
-		var sensor = this;
 		if (!_hasLazyInitialized)
 		{
-			AgentReset();
+			OnEpisodeBegin();
 		}
 
         float timeDelta = Time.fixedDeltaTime * _decisionRequester.DecisionPeriod;
         _dReConObservations.OnStep(timeDelta);
-        _dReConRewards.OnStep(timeDelta);        
+        _dReConRewards.OnStep(timeDelta);
 
-        sensor.AddVectorObs(_dReConObservations.MocapCOMVelocity);
-        sensor.AddVectorObs(_dReConObservations.RagDollCOMVelocity);
-        sensor.AddVectorObs(_dReConObservations.RagDollCOMVelocity-_dReConObservations.MocapCOMVelocity);
-        sensor.AddVectorObs(_dReConObservations.InputDesiredHorizontalVelocity);
-        sensor.AddVectorObs(_dReConObservations.InputJump);
-        sensor.AddVectorObs(_dReConObservations.InputBackflip);
-        sensor.AddVectorObs(_dReConObservations.HorizontalVelocityDifference);
+        sensor.AddObservation(_dReConObservations.MocapCOMVelocity);
+        sensor.AddObservation(_dReConObservations.RagDollCOMVelocity);
+        sensor.AddObservation(_dReConObservations.RagDollCOMVelocity-_dReConObservations.MocapCOMVelocity);
+        sensor.AddObservation(_dReConObservations.InputDesiredHorizontalVelocity);
+        sensor.AddObservation(_dReConObservations.InputJump);
+        sensor.AddObservation(_dReConObservations.InputBackflip);
+        sensor.AddObservation(_dReConObservations.HorizontalVelocityDifference);
         // foreach (var stat in _dReConObservations.MocapBodyStats)
         // {
-        //     sensor.AddVectorObs(stat.Position);
-        //     sensor.AddVectorObs(stat.Velocity);
+        //     sensor.AddObservation(stat.Position);
+        //     sensor.AddObservation(stat.Velocity);
         // }
         foreach (var stat in _dReConObservations.RagDollBodyStats)
         {
-            sensor.AddVectorObs(stat.Position);
-            sensor.AddVectorObs(stat.Velocity);
-        }                
+            sensor.AddObservation(stat.Position);
+            sensor.AddObservation(stat.Velocity);
+        }
         foreach (var stat in _dReConObservations.BodyPartDifferenceStats)
         {
-            sensor.AddVectorObs(stat.Position);
-            sensor.AddVectorObs(stat.Velocity);
+            sensor.AddObservation(stat.Position);
+            sensor.AddObservation(stat.Velocity);
         }
-        sensor.AddVectorObs(_dReConObservations.PreviousActions);
-        
+        sensor.AddObservation(_dReConObservations.PreviousActions);
+
         // add sensors (feet etc)
-        sensor.AddVectorObs(_sensorObservations.SensorIsInTouch);
+        sensor.AddObservation(_sensorObservations.SensorIsInTouch);
     }
-	public override void AgentAction(float[] vectorAction)
+	public override void OnActionReceived(ActionBuffers actions)
     {
+		var vectorAction = actions.ContinuousActions.ToArray();
         if (!_hasLazyInitialized)
 		{
 			return;
@@ -180,7 +182,7 @@ public class RagDollAgent : Agent
         if (_dReConRewards.HeadHeightDistance > 0.5f || _dReConRewards.Reward <= 0f)
         {
             if (!dontResetOnZeroReward)
-                Done();
+                EndEpisode();
         }
         // else if (_dReConRewards.HeadDistance > 1.5f)
         else if (_dReConRewards.Reward <= 0.1f)
@@ -204,7 +206,7 @@ public class RagDollAgent : Agent
             .ToArray();
         return _smoothedActions;
     }
-	public override void AgentReset()
+	public override void OnEpisodeBegin()
 	{
 		if (!_hasLazyInitialized)
 		{
@@ -377,7 +379,7 @@ public class RagDollAgent : Agent
     {
         if (debugCopyMocap)
         {
-            Done();
+            EndEpisode();
         }
     }
     void OnDrawGizmos()

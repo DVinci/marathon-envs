@@ -1,9 +1,7 @@
 using UnityEngine;
 
-namespace MLAgents
+public class SensorBehavior : MonoBehaviour
 {
-    public class SensorBehavior : MonoBehaviour
-    {
         MarathonAgent _marathonAgent;
         IOnSensorCollision _onSensorCollision;
 
@@ -46,6 +44,5 @@ namespace MLAgents
         {
             if (_onSensorCollision != null)
                 _onSensorCollision.OnSensorCollisionEnter(_collider, other.gameObject);
-        }        
+        }
     }
-}

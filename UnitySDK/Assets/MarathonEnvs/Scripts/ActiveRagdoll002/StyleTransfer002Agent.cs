@@ -5,7 +5,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using MLAgents;
+using Unity.MLAgents;
+using Unity.MLAgents.Sensors;
+using Unity.MLAgents.Actuators;
 using System.Linq;
 
 public class StyleTransfer002Agent : Agent, IOnSensorCollision, IOnTerrainCollision {
@@ -45,46 +47,46 @@ public class StyleTransfer002Agent : Agent, IOnSensorCollision, IOnTerrainCollis
 	}
 
     // Collect observations that are used by the Neural Network for training and inference.
-	override public void CollectObservations()
+	override public void CollectObservations(VectorSensor sensor)
 	{
-		var sensor = this;
 		if (!_hasLazyInitialized)
 		{
-			AgentReset();
+			OnEpisodeBegin();
 		}
 
-		sensor.AddVectorObs(_master.ObsPhase);
+		sensor.AddObservation(_master.ObsPhase);
 
 		foreach (var bodyPart in _master.BodyParts)
 		{
-			sensor.AddVectorObs(bodyPart.ObsLocalPosition);
-			sensor.AddVectorObs(bodyPart.ObsRotation);
-			sensor.AddVectorObs(bodyPart.ObsRotationVelocity);
-			sensor.AddVectorObs(bodyPart.ObsVelocity);
+			sensor.AddObservation(bodyPart.ObsLocalPosition);
+			sensor.AddObservation(bodyPart.ObsRotation);
+			sensor.AddObservation(bodyPart.ObsRotationVelocity);
+			sensor.AddObservation(bodyPart.ObsVelocity);
 		}
 		foreach (var muscle in _master.Muscles)
 		{
 			if (muscle.ConfigurableJoint.angularXMotion != ConfigurableJointMotion.Locked)
-				sensor.AddVectorObs(muscle.TargetNormalizedRotationX);
+				sensor.AddObservation(muscle.TargetNormalizedRotationX);
 			if (muscle.ConfigurableJoint.angularYMotion != ConfigurableJointMotion.Locked)
-				sensor.AddVectorObs(muscle.TargetNormalizedRotationY);
+				sensor.AddObservation(muscle.TargetNormalizedRotationY);
 			if (muscle.ConfigurableJoint.angularZMotion != ConfigurableJointMotion.Locked)
-				sensor.AddVectorObs(muscle.TargetNormalizedRotationZ);
+				sensor.AddObservation(muscle.TargetNormalizedRotationZ);
 		}
 
-		sensor.AddVectorObs(_master.ObsCenterOfMass);
-		sensor.AddVectorObs(_master.ObsVelocity);
-		sensor.AddVectorObs(_master.ObsAngularMoment);
-		sensor.AddVectorObs(SensorIsInTouch);
+		sensor.AddObservation(_master.ObsCenterOfMass);
+		sensor.AddObservation(_master.ObsVelocity);
+		sensor.AddObservation(_master.ObsAngularMoment);
+		sensor.AddObservation(SensorIsInTouch);
 	}
 
     // A method that applies the vectorAction to the muscles, and calculates the rewards. 
-	public override void AgentAction(float[] vectorAction)
+	public override void OnActionReceived(ActionBuffers actions)
 	{
 		if (!_hasLazyInitialized)
 		{
 			return;
 		}
+		var vectorAction = actions.ContinuousActions;
 		_isDone = false;
 		if (_styleAnimator == _localStyleAnimator)
 			_styleAnimator.OnAgentAction();
@@ -149,17 +151,17 @@ public class StyleTransfer002Agent : Agent, IOnSensorCollision, IOnTerrainCollis
 			AddReward(reward);
 
 		if (reward < 0.5)
-			Done();
+			EndEpisode();
 
 		if (!_isDone){
 			if (_master.IsDone()){
-				Done();
+				EndEpisode();
 				if (_master.StartAnimationIndex > 0)
 				 	_master.StartAnimationIndex--;
 			}
 		}
 		FrameReward = reward;
-		var stepCount = GetStepCount() > 0 ? GetStepCount() : 1;
+		var stepCount = StepCount > 0 ? StepCount : 1;
 		AverageReward = GetCumulativeReward() / (float) stepCount;
 	}
 
@@ -202,7 +204,7 @@ public class StyleTransfer002Agent : Agent, IOnSensorCollision, IOnTerrainCollis
 	}
 
     // Resets the agent. Initialize the style animator and master if not initialized. 
-	public override void AgentReset()
+	public override void OnEpisodeBegin()
 	{
 		if (!_hasLazyInitialized)
 		{
@@ -260,7 +262,7 @@ public class StyleTransfer002Agent : Agent, IOnSensorCollision, IOnTerrainCollis
 			case BodyHelper002.BodyPartGroup.ArmUpper:
 				break;
 			default:
-				Done();
+				EndEpisode();
 				break;
 		}
 	}
