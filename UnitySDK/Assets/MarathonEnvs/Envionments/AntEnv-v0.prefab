@@ -198,8 +198,13 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Model
       value: 
-      objectReference: {fileID: 5022602860645237092, guid: 92d63225096455943a42710c9a2a2bf1,
+      objectReference: {fileID: 5022602860645237092, guid: e714c5741abed3e46ba1e031999ff0fa,
         type: 3}
+    - target: {fileID: 114228609771559028, guid: 54ab053b5f4414ff9a8a7e81b545fe23,
+        type: 3}
+      propertyPath: m_BehaviorType
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 114612892920136778, guid: 54ab053b5f4414ff9a8a7e81b545fe23,
         type: 3}
       propertyPath: agentParameters.agentRenderTextures.Array.size

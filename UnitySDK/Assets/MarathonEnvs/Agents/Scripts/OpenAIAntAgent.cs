@@ -12,15 +12,37 @@ public class OpenAIAntAgent : MarathonAgent
     {
         base.OnEpisodeBegin();
 
-        // set to true this to show monitor while training
-        //Monitor.SetActive(true);
-
         StepRewardFunction = StepRewardAnt101;
         TerminateFunction = TerminateAnt;
         ObservationsFunction = ObservationsDefault;
 
         BodyParts["pelvis"] = GetComponentsInChildren<Rigidbody>().FirstOrDefault(x => x.name == "torso_geom");
         SetupBodyParts();
+        ApplyAnkleInitPose();
+    }
+
+    void ApplyAnkleInitPose()
+    {
+        // init_qpos specifies ankles at ±1.0 rad (57.3°). MarathonSpawner negates ConfigurableJoint
+        // axis vs MuJoCo (ToConfigurable line 1230), so sign is inverted:
+        // MuJoCo ankle_1 +1.0 rad → Unity -57.3°; ankle_2/3 -1.0 rad → Unity +57.3°
+        var ankleInitAngles = new Dictionary<string, float>
+        {
+            { "ankle_1", -57.3f },
+            { "ankle_2",  57.3f },
+            { "ankle_3",  57.3f },
+            { "ankle_4", -57.3f },
+        };
+        foreach (var mj in MarathonJoints)
+        {
+            if (!ankleInitAngles.TryGetValue(mj.JointName, out float angleDeg)) continue;
+            var cj = mj.Joint as ConfigurableJoint;
+            if (cj == null) continue;
+            var worldAxis = cj.transform.TransformDirection(cj.axis);
+            cj.transform.rotation = Quaternion.AngleAxis(angleDeg, worldAxis) * cj.transform.rotation;
+            var rb = cj.GetComponent<Rigidbody>();
+            if (rb != null) { rb.velocity = Vector3.zero; rb.angularVelocity = Vector3.zero; }
+        }
     }
 
     void ObservationsDefault(VectorSensor sensor)
